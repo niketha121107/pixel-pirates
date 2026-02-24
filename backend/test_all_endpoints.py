@@ -7,7 +7,7 @@ import requests
 import json
 import sys
 
-BASE = "http://localhost:5001"
+BASE = "http://localhost:8000"
 TOKEN = None
 PASS = 0
 FAIL = 0
