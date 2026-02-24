@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
@@ -17,3 +18,15 @@ createRoot(document.getElementById('root')!).render(
     </UserPreferencesProvider>
   </StrictMode>,
 );
+=======
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App'
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+>>>>>>> fff541230f2ea326096f9f7bf3bb0b31c06d86a8
