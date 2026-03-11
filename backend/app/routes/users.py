@@ -32,10 +32,22 @@ async def update_user_profile(
         )
     
     # Update user data
-    if updates.name is not None:
-        user["name"] = updates.name
-    if updates.preferred_style is not None:
-        user["preferredStyle"] = updates.preferred_style
+    update_fields = {
+        "name": updates.name,
+        "preferredStyle": updates.preferred_style,
+        "bio": updates.bio,
+        "location": updates.location,
+        "university": updates.university,
+        "year": updates.year,
+        "username": updates.username,
+    }
+    for key, value in update_fields.items():
+        if value is not None:
+            user[key] = value
+    
+    # Persist to MongoDB
+    from app.data import update_user_in_db
+    update_user_in_db(current_user["id"], {k: v for k, v in update_fields.items() if v is not None})
     
     # Remove password from response
     user_data = {k: v for k, v in user.items() if k != "password"}
@@ -51,30 +63,26 @@ async def get_user_stats(current_user: dict = Depends(get_current_user_from_toke
     """Get user statistics for profile page"""
     user = current_user
     
-    # Calculate stats
+    # Compute real stats from user data
+    completed = user.get("completedTopics", [])
+    pending = user.get("pendingTopics", [])
+    in_progress = user.get("inProgressTopics", [])
+    quiz_scores = user.get("quizScores", {})
+    
+    total_topics = len(completed) + len(pending) + len(in_progress)
+    avg_score = round(sum(quiz_scores.values()) / len(quiz_scores), 1) if quiz_scores else 0
+    
     stats = {
-        "topicsCompleted": len(user["completedTopics"]),
-        "totalTopics": len(user["completedTopics"]) + len(user["pendingTopics"]) + len(user["inProgressTopics"]),
-        "quizzesTaken": len(user["completedTopics"]),
-        "avgScore": 72,  # Mock average
-        "streak": 12,
-        "totalHours": 34,
-        "joinDate": "Jan 2026",
-        "rank": user.get("rank", 3),
-        "badges": [
-            {"name": "First Quiz", "icon": "🏅", "earned": True},
-            {"name": "Week Streak", "icon": "🔥", "earned": True},
-            {"name": "Perfect Score", "icon": "⭐", "earned": True},
-            {"name": "Night Owl", "icon": "🦉", "earned": True},
-            {"name": "Speed Demon", "icon": "⚡", "earned": False},
-            {"name": "Completionist", "icon": "🏆", "earned": False},
-        ],
-        "languages": [
-            {"name": "Python", "level": 78, "color": "bg-blue-500"},
-            {"name": "Java", "level": 55, "color": "bg-orange-500"},
-            {"name": "C", "level": 65, "color": "bg-gray-600"},
-            {"name": "SQL", "level": 70, "color": "bg-emerald-500"},
-        ]
+        "topicsCompleted": len(completed),
+        "totalTopics": total_topics,
+        "quizzesTaken": len(quiz_scores),
+        "avgScore": avg_score,
+        "streak": user.get("streak", 0),
+        "totalHours": user.get("totalHours", 0),
+        "joinDate": user.get("createdAt", "N/A"),
+        "rank": user.get("rank", total_topics),
+        "badges": user.get("badges", []),
+        "languages": user.get("languages", []),
     }
     
     return SuccessResponse(

@@ -7,11 +7,13 @@ interface UserPreferences {
     avatar: string;
     wallpaperId: string;
     wallpaper: WallpaperOption;
+    language: string;
 }
 
 interface UserPreferencesContextType {
     preferences: UserPreferences;
     savePreferences: (avatar: string, wallpaperId: string) => void;
+    setLanguage: (lang: string) => void;
 }
 
 const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix&backgroundColor=b6e3f4';
@@ -29,6 +31,7 @@ function loadPreferences(): UserPreferences {
                 avatar: parsed.avatar || DEFAULT_AVATAR,
                 wallpaperId: parsed.wallpaperId || DEFAULT_WALLPAPER_ID,
                 wallpaper: getWallpaperById(parsed.wallpaperId || DEFAULT_WALLPAPER_ID),
+                language: parsed.language || 'en',
             };
         }
     } catch {
@@ -38,6 +41,7 @@ function loadPreferences(): UserPreferences {
         avatar: DEFAULT_AVATAR,
         wallpaperId: DEFAULT_WALLPAPER_ID,
         wallpaper: getWallpaperById(DEFAULT_WALLPAPER_ID),
+        language: 'en',
     };
 }
 
@@ -48,13 +52,19 @@ export const UserPreferencesProvider = ({ children }: { children: ReactNode }) =
 
     const savePreferences = (avatar: string, wallpaperId: string) => {
         const wp = getWallpaperById(wallpaperId);
-        const newPrefs: UserPreferences = { avatar, wallpaperId, wallpaper: wp };
+        const newPrefs: UserPreferences = { ...preferences, avatar, wallpaperId, wallpaper: wp };
         setPreferences(newPrefs);
-        localStorage.setItem('edutwin-user-preferences', JSON.stringify({ avatar, wallpaperId }));
+        localStorage.setItem('edutwin-user-preferences', JSON.stringify({ avatar, wallpaperId, language: newPrefs.language }));
+    };
+
+    const setLanguage = (lang: string) => {
+        const newPrefs: UserPreferences = { ...preferences, language: lang };
+        setPreferences(newPrefs);
+        localStorage.setItem('edutwin-user-preferences', JSON.stringify({ avatar: newPrefs.avatar, wallpaperId: newPrefs.wallpaperId, language: lang }));
     };
 
     return (
-        <UserPreferencesContext.Provider value={{ preferences, savePreferences }}>
+        <UserPreferencesContext.Provider value={{ preferences, savePreferences, setLanguage }}>
             {children}
         </UserPreferencesContext.Provider>
     );

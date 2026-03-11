@@ -23,67 +23,21 @@ interface NotificationContextType {
 }
 
 const STORAGE_KEY = 'edutwin-notifications';
-
-// ─── Pending topics (mirrors Dashboard mock data) ────────────────
-const PENDING_TOPICS = [
-    { id: 6, title: 'Advanced Iterators & Generators', lang: 'Python' },
-    { id: 7, title: 'Red-Black Trees', lang: 'Java' },
-    { id: 8, title: 'Memory Management', lang: 'C' },
-    { id: 9, title: 'Async/Await Patterns', lang: 'JavaScript' },
-    { id: 10, title: 'Graph Algorithms', lang: 'Python' },
-    { id: 11, title: 'Dynamic Programming', lang: 'C++' },
-    { id: 12, title: 'REST API Design', lang: 'JSON' },
-];
-
-const COMPLETED_TOPICS = [
-    { id: 1, title: 'Python Functions & Scope', lang: 'Python' },
-    { id: 2, title: 'Java OOP Basics', lang: 'Java' },
-    { id: 3, title: 'C Pointers Introduction', lang: 'C' },
-    { id: 4, title: 'Data Structures Overview', lang: 'Python' },
-    { id: 5, title: 'SQL Fundamentals', lang: 'SQL' },
-];
-
-function generateDefaultNotifications(): Notification[] {
-    const now = Date.now();
-    const notifications: Notification[] = [];
-
-    // Reminder notifications for pending topics
-    PENDING_TOPICS.forEach((topic, i) => {
-        notifications.push({
-            id: `reminder-${topic.id}`,
-            type: 'reminder',
-            title: 'Pending: Complete this topic',
-            message: `You haven't completed "${topic.title}" (${topic.lang}) yet. Continue learning to stay on track!`,
-            timestamp: now - (i + 1) * 3600_000, // staggered by 1h each
-            read: false,
-            topicId: topic.id,
-        });
-    });
-
-    // Congrats notifications for completed topics
-    COMPLETED_TOPICS.forEach((topic, i) => {
-        notifications.push({
-            id: `congrats-${topic.id}`,
-            type: 'congrats',
-            title: 'Congratulations! Topic completed 🎉',
-            message: `Great job finishing "${topic.title}"! Keep up the awesome work.`,
-            timestamp: now - (i + 8) * 3600_000,
-            read: true,
-            topicId: topic.id,
-        });
-    });
-
-    return notifications.sort((a, b) => b.timestamp - a.timestamp);
-}
+const CACHE_VERSION_KEY = 'edutwin-notifications-v';
+const CURRENT_VERSION = '2'; // bump to invalidate stale mock data
 
 function loadNotifications(): Notification[] {
     try {
+        // Invalidate stale cached mock data from older versions
+        if (localStorage.getItem(CACHE_VERSION_KEY) !== CURRENT_VERSION) {
+            localStorage.removeItem(STORAGE_KEY);
+            localStorage.setItem(CACHE_VERSION_KEY, CURRENT_VERSION);
+            return [];
+        }
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) return JSON.parse(raw);
     } catch { /* ignore */ }
-    const defaults = generateDefaultNotifications();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
-    return defaults;
+    return [];
 }
 
 function persist(notifications: Notification[]) {

@@ -3,16 +3,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-from datetime import datetime, date
+from datetime import datetime, date  # viewable article URLs
 import uvicorn
 from app.models import *
 from app.data import get_mock_data, initialize_data
-from app.routes import auth, users, topics, quiz, videos, leaderboard, analytics, search
+from app.routes import auth, users, topics, quiz, videos, leaderboard, analytics, search, chat
 from app.routes import database as db_routes
+from app.routes import notes, feedback, progress
+from app.routes import adaptive
 from app.core.config import Settings
 from app.core.database import connect_to_mongo, close_mongo_connection
 
 settings = Settings()
+
 
 # Initialize data with proper password hashing
 initialize_data()
@@ -23,15 +26,16 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# Configure CORS using environment variables
+
+
+# ✅ THEN ADD CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=["*"],  # TEMPORARY for testing
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # Database connection events
 @app.on_event("startup")
 async def startup_event():
@@ -60,6 +64,9 @@ async def shutdown_event():
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    # Let HTTPException be handled by FastAPI's built-in handler
+    if isinstance(exc, HTTPException):
+        raise exc
     return JSONResponse(
         status_code=500,
         content={
@@ -78,7 +85,12 @@ app.include_router(videos.router, prefix="/api/videos", tags=["videos"])
 app.include_router(leaderboard.router, prefix="/api/leaderboard", tags=["leaderboard"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(search.router, prefix="/api/search", tags=["search"])
+app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(db_routes.router, prefix="/api/database", tags=["database"])
+app.include_router(notes.router, prefix="/api/notes", tags=["notes"])
+app.include_router(feedback.router, prefix="/api/feedback", tags=["feedback"])
+app.include_router(progress.router, prefix="/api/progress", tags=["progress"])
+app.include_router(adaptive.router, prefix="/api/adaptive", tags=["adaptive"])
 
 @app.get("/")
 async def read_root():

@@ -1,9 +1,10 @@
-import { Bell, Home, User, CheckCheck, Trash2, Clock, PartyPopper, Info } from 'lucide-react';
+import { Bell, User, CheckCheck, Trash2, Clock, PartyPopper, Info, LogOut, Bot } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useUserPreferences } from '../../context/UserPreferencesContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { useAuth } from '../../context/AuthContext';
 import type { NotificationType } from '../../context/NotificationContext';
 
 const typeStyles: Record<NotificationType, { icon: typeof Clock; bg: string; color: string }> = {
@@ -26,8 +27,15 @@ function timeAgo(ts: number) {
 export const Navbar = ({ onMenuClick }: { onMenuClick: () => void }) => {
     const { preferences } = useUserPreferences();
     const { notifications, unreadCount, markAsRead, markAllAsRead, clearAll } = useNotifications();
+    const { logout } = useAuth();
+    const navigate = useNavigate();
     const [showNotifications, setShowNotifications] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+
+    const handleLogout = () => {
+        logout();
+        navigate('/signin');
+    };
 
     // Close dropdown on outside click
     useEffect(() => {
@@ -36,12 +44,15 @@ export const Navbar = ({ onMenuClick }: { onMenuClick: () => void }) => {
                 setShowNotifications(false);
             }
         };
-        if (showNotifications) document.addEventListener('mousedown', handler);
+        document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
-    }, [showNotifications]);
+    }, []);
 
     return (
-        <nav className="fixed w-full z-40 glass-panel h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8">
+        <nav
+            className="fixed w-full z-40 glass-panel h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8"
+            onWheel={(e) => e.stopPropagation()}
+        >
             <div className="flex items-center gap-4">
                 <button
                     onClick={onMenuClick}
@@ -51,20 +62,20 @@ export const Navbar = ({ onMenuClick }: { onMenuClick: () => void }) => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                     </svg>
                 </button>
-                <Link to="/dashboard" className="text-2xl font-bold tracking-tighter">
+                <Link to="/profile" className="text-2xl font-bold tracking-tighter">
                     <span className="text-gradient hover:opacity-80 transition-opacity cursor-pointer">EduTwin</span>
                 </Link>
             </div>
 
             <div className="flex items-center gap-3">
-                <Link to="/dashboard">
+                <Link to="/chat">
                     <motion.button
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-brand/5 text-brand hover:bg-brand/10 transition-colors font-medium text-sm"
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-green-50 text-green-600 hover:bg-green-100 transition-colors font-medium text-sm"
                     >
-                        <Home className="w-4 h-4" />
-                        <span className="hidden sm:inline">Dashboard</span>
+                        <Bot className="w-4 h-4" />
+                        <span className="hidden sm:inline">AI Chat</span>
                     </motion.button>
                 </Link>
 
@@ -186,6 +197,17 @@ export const Navbar = ({ onMenuClick }: { onMenuClick: () => void }) => {
                         </div>
                     </motion.div>
                 </Link>
+
+                <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleLogout}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-red-500 hover:bg-red-50 transition-colors font-medium text-sm"
+                    title="Log out"
+                >
+                    <LogOut className="w-4 h-4" />
+                    <span className="hidden sm:inline">Logout</span>
+                </motion.button>
             </div>
         </nav>
     );

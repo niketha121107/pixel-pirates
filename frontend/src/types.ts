@@ -2,7 +2,7 @@ export interface User {
     id: string;
     name: string;
     email: string;
-    password: string;
+    password?: string;
     completedTopics: string[];
     pendingTopics: string[];
     inProgressTopics: string[];
@@ -62,4 +62,55 @@ export interface LeaderboardEntry {
     score: number;
     topicsCompleted: number;
     avatar: string;
+}
+
+// ── Notes ──────────────────────────────────────────────────────
+export interface UserNote {
+    user_id: string;
+    topic_id: string;
+    title: string;
+    content: string;
+    created_at?: string;
+    updated_at?: string;
+}
+
+// ── Feedback ───────────────────────────────────────────────────
+export interface UserFeedback {
+    user_id: string;
+    topic_id: string;
+    rating: number;
+    comment: string;
+    created_at?: string;
+}
+
+// ── Detailed Progress ──────────────────────────────────────────
+export interface TopicProgressRecord {
+    user_id: string;
+    topic_id: string;
+    time_spent: number;
+    quiz_score?: number;
+    quiz_total?: number;
+    attempts: number;
+    status: string;
+    updated_at?: string;
+}
+
+// ── Mock Test Result ───────────────────────────────────────────
+export interface MockTestResult {
+    user_id: string;
+    topics: string[];
+    score: number;
+    total_questions: number;
+    percentage: number;
+    time_taken: number;
+    created_at?: string;
+}
+
+// ── Adaptive Analysis ──────────────────────────────────────────
+export interface AdaptiveAnalysis {
+    strengths: string[];
+    weaknesses: string[];
+    recommendations: string[];
+    nextTopics: string[];
+    studyPlan: string;
 }

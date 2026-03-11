@@ -42,10 +42,12 @@ class UserResponse(BaseModel):
     class Config:
         populate_by_name = True
 
+from pydantic import BaseModel
+
 class UserCreate(BaseModel):
-    name: str = Field(..., min_length=2, max_length=50)
-    email: str = Field(..., pattern=r'^[^@]+@[^@]+\.[^@]+$')
-    password: str = Field(..., min_length=6, max_length=100)
+    name: str
+    email: str
+    password: str
 
 class UserLogin(BaseModel):
     email: str = Field(..., pattern=r'^[^@]+@[^@]+\.[^@]+$')
@@ -54,6 +56,11 @@ class UserLogin(BaseModel):
 class UserUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=50)
     preferred_style: Optional[str] = None
+    bio: Optional[str] = None
+    location: Optional[str] = None
+    university: Optional[str] = None
+    year: Optional[str] = None
+    username: Optional[str] = None
 
 class AuthToken(BaseModel):
     access_token: str

@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { topicsAPI, quizAPI, progressAPI } from '../services/api';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GradientButton } from '../components/ui/GradientButton';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { CheckCircle2, XCircle, ArrowRight, Home, Trophy, RotateCcw, Sparkles, Rocket } from 'lucide-react';
+import { CheckCircle2, XCircle, ArrowRight, Home, Trophy, RotateCcw, Sparkles, Rocket, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface Question {
@@ -13,39 +15,6 @@ interface Question {
     correctIdx: number;
     explanation: string;
 }
-
-const questions: Question[] = [
-    {
-        text: "Which keyword is used in Python to create a generator function?",
-        options: ["return", "yield", "generator", "async"],
-        correctIdx: 1,
-        explanation: "The 'yield' keyword is used to create generator functions. When Python encounters 'yield', it turns the function into a generator that can produce a series of values lazily."
-    },
-    {
-        text: "What is the time complexity of searching in a balanced binary search tree?",
-        options: ["O(n)", "O(log n)", "O(n²)", "O(1)"],
-        correctIdx: 1,
-        explanation: "A balanced BST halves the search space at each step, giving O(log n) time complexity, similar to binary search on a sorted array."
-    },
-    {
-        text: "Which data structure uses LIFO (Last In First Out) ordering?",
-        options: ["Queue", "Array", "Stack", "Linked List"],
-        correctIdx: 2,
-        explanation: "A Stack follows LIFO ordering — the last element pushed onto the stack is the first one to be popped off. Think of a stack of plates."
-    },
-    {
-        text: "What does the 'this' keyword refer to in a JavaScript arrow function?",
-        options: ["The function itself", "The global object", "The enclosing lexical context", "undefined"],
-        correctIdx: 2,
-        explanation: "Arrow functions don't have their own 'this' — they inherit 'this' from the enclosing lexical scope (the surrounding code where the arrow function was defined)."
-    },
-    {
-        text: "In SQL, which clause is used to filter grouped results?",
-        options: ["WHERE", "HAVING", "FILTER", "GROUP BY"],
-        correctIdx: 1,
-        explanation: "HAVING is used to filter results after GROUP BY aggregation. WHERE filters individual rows before grouping, while HAVING filters the grouped results."
-    }
-];
 
 // ── Encouraging messages for wrong answers ──
 const WRONG_MESSAGES = [
@@ -188,8 +157,14 @@ const WrongAnswerPopup = ({ message, onDone }: { message: string; onDone: () => 
 };
 
 export const QuizPage = () => {
+    const [searchParams] = useSearchParams();
+    const topicId = searchParams.get('topicId') || '';
+    const subtopicId = searchParams.get('subtopicId') || '';
+
+    const [questions, setQuestions] = useState<Question[]>([]);
+    const [loading, setLoading] = useState(true);
     const [currentQ, setCurrentQ] = useState(0);
-    const [answers, setAnswers] = useState<(number | null)[]>(Array(questions.length).fill(null));
+    const [answers, setAnswers] = useState<(number | null)[]>([]);
     const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
     const [showResult, setShowResult] = useState(false);
 
@@ -197,9 +172,35 @@ export const QuizPage = () => {
     const [feedbackState, setFeedbackState] = useState<'idle' | 'correct' | 'wrong'>('idle');
     const [wrongMessage, setWrongMessage] = useState('');
 
+    // Fetch questions from API
+    useEffect(() => {
+        setLoading(true);
+        const fetchQuiz = topicId
+            ? topicsAPI.getQuiz(topicId, subtopicId || undefined)
+            : quizAPI.adaptive('topic-1', 5);
+
+        fetchQuiz
+            .then(res => {
+                const data = res.data?.data;
+                const rawQuestions = data?.quiz || data?.questions || [];
+                const mapped: Question[] = rawQuestions.map((q: any) => ({
+                    text: q.question || q.text || '',
+                    options: q.options || [],
+                    correctIdx: typeof q.correctAnswer === 'number' ? q.correctAnswer : (q.correctIdx ?? 0),
+                    explanation: q.explanation || 'Review this concept for a deeper understanding.',
+                }));
+                setQuestions(mapped);
+                setAnswers(Array(mapped.length).fill(null));
+            })
+            .catch(() => {
+                setQuestions([]);
+            })
+            .finally(() => setLoading(false));
+    }, [topicId]);
+
     const totalQuestions = questions.length;
-    const currentQuestion = questions[currentQ];
-    const progressPercentage = ((currentQ + 1) / totalQuestions) * 100;
+    const currentQuestion = questions[currentQ] || { text: '', options: [], correctIdx: 0, explanation: '' };
+    const progressPercentage = totalQuestions > 0 ? ((currentQ + 1) / totalQuestions) * 100 : 0;
 
     const handleSelect = (idx: number) => {
         if (feedbackState !== 'idle') return; // lock while showing feedback
@@ -212,9 +213,31 @@ export const QuizPage = () => {
             setSelectedAnswer(null);
         } else {
             setShowResult(true);
+            // Submit quiz result to backend
+            if (topicId) {
+                const finalAnswers = [...answers];
+                finalAnswers[currentQ] = selectedAnswer ?? -1;
+                const finalScore = finalAnswers.filter((a, i) => a === questions[i]?.correctIdx).length;
+                const pct = totalQuestions > 0 ? Math.round((finalScore / totalQuestions) * 100) : 0;
+                progressAPI.saveTopic({
+                    topic_id: topicId,
+                    quiz_score: finalScore,
+                    quiz_total: totalQuestions,
+                    attempts: 1,
+                    status: pct >= 70 ? 'completed' : 'in-progress',
+                }).catch(() => {});
+                quizAPI.submit({
+                    topic_id: topicId,
+                    answers: questions.map((q, i) => ({
+                        question_id: q.text?.slice(0, 20) || `q-${i}`,
+                        selected_answer: finalAnswers[i] ?? -1,
+                    })),
+                    time_taken: 0,
+                }).catch(() => {});
+            }
         }
         setFeedbackState('idle');
-    }, [currentQ, totalQuestions]);
+    }, [currentQ, totalQuestions, topicId, answers, selectedAnswer, questions]);
 
     const handleNext = () => {
         if (selectedAnswer === null) return;
@@ -235,16 +258,42 @@ export const QuizPage = () => {
         }
     };
 
-    const score = answers.filter((a, i) => a === questions[i].correctIdx).length;
-    const percentage = Math.round((score / totalQuestions) * 100);
+    const score = totalQuestions > 0 ? answers.filter((a, i) => a === questions[i]?.correctIdx).length : 0;
+    const percentage = totalQuestions > 0 ? Math.round((score / totalQuestions) * 100) : 0;
 
     const handleRetry = () => {
         setCurrentQ(0);
-        setAnswers(Array(questions.length).fill(null));
+        setAnswers(Array(totalQuestions).fill(null));
         setSelectedAnswer(null);
         setShowResult(false);
         setFeedbackState('idle');
     };
+
+    // Loading state
+    if (loading) {
+        return (
+            <PageWrapper className="justify-center items-center py-12" withPadding={false}>
+                <div className="flex flex-col items-center gap-4">
+                    <Loader2 className="w-10 h-10 text-brand animate-spin" />
+                    <p className="text-gray-500 font-medium">Loading quiz questions...</p>
+                </div>
+            </PageWrapper>
+        );
+    }
+
+    // No questions available
+    if (questions.length === 0) {
+        return (
+            <PageWrapper className="justify-center items-center py-12" withPadding={false}>
+                <div className="flex flex-col items-center gap-4 text-center">
+                    <Trophy className="w-12 h-12 text-gray-300" />
+                    <h2 className="text-xl font-bold text-gray-800">No quiz available</h2>
+                    <p className="text-gray-500">No questions found for this topic. Try another one!</p>
+                    <Link to="/videos"><GradientButton>Back to Topics</GradientButton></Link>
+                </div>
+            </PageWrapper>
+        );
+    }
 
     // Results Screen
     if (showResult) {
@@ -277,18 +326,30 @@ export const QuizPage = () => {
                                     }
                                 </p>
 
-                                <div className="flex gap-3 mt-4">
-                                    <button
-                                        onClick={handleRetry}
-                                        className="flex items-center gap-2 px-5 py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition-colors"
-                                    >
-                                        <RotateCcw className="w-4 h-4" /> Retry
-                                    </button>
-                                    <Link to="/dashboard">
-                                        <GradientButton>
-                                            <Home className="w-4 h-4" /> Dashboard
-                                        </GradientButton>
-                                    </Link>
+                                {/* Detailed marks breakdown */}
+                                <div className="mt-4 grid grid-cols-3 gap-3 max-w-sm mx-auto">
+                                    <div className="bg-green-50 rounded-xl p-3">
+                                        <p className="text-2xl font-bold text-green-600">{score}</p>
+                                        <p className="text-[10px] text-green-600 font-medium">Correct</p>
+                                    </div>
+                                    <div className="bg-red-50 rounded-xl p-3">
+                                        <p className="text-2xl font-bold text-red-500">{totalQuestions - score}</p>
+                                        <p className="text-[10px] text-red-500 font-medium">Wrong</p>
+                                    </div>
+                                    <div className="bg-blue-50 rounded-xl p-3">
+                                        <p className="text-2xl font-bold text-blue-600">{percentage}%</p>
+                                        <p className="text-[10px] text-blue-600 font-medium">Percentage</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-3 mt-6 flex-wrap justify-center">
+                                    {topicId && (
+                                        <Link to={`/topic?id=${topicId}`}>
+                                            <button className="flex items-center gap-2 px-5 py-3 bg-emerald-50 text-emerald-600 rounded-xl font-semibold hover:bg-emerald-100 transition-colors">
+                                                <ArrowRight className="w-4 h-4 rotate-180" /> Back to Topic
+                                            </button>
+                                        </Link>
+                                    )}
                                 </div>
                             </div>
                         </GlassCard>

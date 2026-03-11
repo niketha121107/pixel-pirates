@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Camera, Check, X } from 'lucide-react';
@@ -24,12 +24,47 @@ export const ProfileAvatar = ({ currentAvatar, onAvatarChange }: ProfileAvatarPr
     const [showPicker, setShowPicker] = useState(false);
     const [selectedStyle, setSelectedStyle] = useState('avataaars');
     const [hoveredAvatar, setHoveredAvatar] = useState<string | null>(null);
+    const triggerRef = useRef<HTMLDivElement | null>(null);
+    const [pickerPosition, setPickerPosition] = useState({ top: 120, left: 16 });
 
     const generateAvatarUrl = (style: string, seed: string) =>
         `https://api.dicebear.com/7.x/${style}/svg?seed=${seed}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`;
 
+    useEffect(() => {
+        if (!showPicker) return;
+
+        const updatePosition = () => {
+            const rect = triggerRef.current?.getBoundingClientRect();
+            if (!rect) return;
+
+            const modalWidth = Math.min(380, window.innerWidth * 0.9);
+            const gap = 12;
+            const preferredTop = rect.bottom + gap;
+            const preferredLeft = rect.left;
+
+            const maxLeft = Math.max(8, window.innerWidth - modalWidth - 8);
+            const nextLeft = Math.max(8, Math.min(preferredLeft, maxLeft));
+
+            // If not enough space below avatar, place above it.
+            const estimatedHeight = 430;
+            const nextTop = (preferredTop + estimatedHeight > window.innerHeight - 8)
+                ? Math.max(8, rect.top - estimatedHeight - gap)
+                : preferredTop;
+
+            setPickerPosition({ top: nextTop, left: nextLeft });
+        };
+
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        window.addEventListener('scroll', updatePosition, true);
+        return () => {
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+        };
+    }, [showPicker]);
+
     return (
-        <div className="relative">
+        <div className="relative" ref={triggerRef}>
             {/* Current Avatar Display - Snap-style */}
             <motion.div
                 whileHover={{ scale: 1.05 }}
@@ -70,7 +105,8 @@ export const ProfileAvatar = ({ currentAvatar, onAvatarChange }: ProfileAvatarPr
                                 animate={{ opacity: 1, scale: 1, y: 0 }}
                                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
                                 transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                                className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] w-[90vw] max-w-[380px]"
+                                className="fixed z-[101] w-[90vw] max-w-[380px]"
+                                style={{ top: `${pickerPosition.top}px`, left: `${pickerPosition.left}px` }}
                             >
                                 <div className="bg-white border border-pink-100 rounded-2xl shadow-2xl p-5">
                                     {/* Header */}

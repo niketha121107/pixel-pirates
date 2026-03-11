@@ -3,8 +3,11 @@
 @tailwind utilities;
 
 @layer base {
+  html, body {
+    @apply overflow-hidden h-full;
+  }
   body {
-    @apply bg-[#fdf6f0] text-gray-800 antialiased overflow-x-hidden;
+    @apply bg-[#fdf6f0] text-gray-800 antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 
@@ -14,6 +17,32 @@
 }
 
 @layer utilities {
+  .app-lock-selection,
+  .app-lock-selection * {
+    user-select: none;
+    -webkit-user-select: none;
+    -ms-user-select: none;
+    cursor: default;
+  }
+
+  .app-lock-selection input,
+  .app-lock-selection textarea,
+  .app-lock-selection select,
+  .app-lock-selection [contenteditable="true"] {
+    user-select: text;
+    -webkit-user-select: text;
+    -ms-user-select: text;
+    cursor: text;
+  }
+
+  .app-lock-selection button,
+  .app-lock-selection a,
+  .app-lock-selection [role="button"],
+  .app-lock-selection label,
+  .app-lock-selection summary {
+    cursor: pointer;
+  }
+
   .glass-effect {
     @apply bg-white/80 backdrop-blur-xl border border-pink-100 shadow-sm;
   }
@@ -43,6 +72,15 @@
   }
 
   .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }

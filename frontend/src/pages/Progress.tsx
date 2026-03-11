@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { usersAPI, topicsAPI } from '../services/api';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { Navbar } from '../components/layout/Navbar';
 import { Sidebar } from '../components/layout/Sidebar';
@@ -8,23 +9,6 @@ import { ProgressRing } from '../components/ui/ProgressRing';
 import { BookCheck, Trophy, Target, Clock, CheckCircle2, XCircle, Brain, Frown, Meh, Smile, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useUnderstanding } from '../context/UnderstandingContext';
-
-const completedTopics = [
-    { title: 'Python Functions & Scope', score: 4, total: 5, date: '2026-02-20', videoWatched: true },
-    { title: 'Java OOP Basics', score: 3, total: 5, date: '2026-02-18', videoWatched: true },
-    { title: 'C Pointers Introduction', score: 5, total: 5, date: '2026-02-15', videoWatched: true },
-    { title: 'Data Structures Overview', score: 2, total: 5, date: '2026-02-12', videoWatched: true },
-    { title: 'SQL Fundamentals', score: 4, total: 5, date: '2026-02-10', videoWatched: true },
-];
-
-const overallStats = {
-    totalTopics: 12,
-    completedTopics: 5,
-    totalQuizzes: 5,
-    avgScore: 72,
-    totalHoursLearned: 18,
-    streak: 12,
-};
 
 const getLevelInfo = (val: number) => {
     if (val < 25) return { icon: Frown, color: 'text-red-500', bg: 'bg-red-50', border: 'border-red-200', label: 'Struggling', barColor: 'bg-red-500' };
@@ -36,8 +20,89 @@ const getLevelInfo = (val: number) => {
 export const Progress = () => {
     const [drawerOpen, setDrawerOpen] = useState(false);
     const { entries, averageUnderstanding } = useUnderstanding();
+    const [completedTopics, setCompletedTopics] = useState<{ title: string; score: number; total: number; date: string; videoWatched: boolean }[]>([]);
+    const [overallStats, setOverallStats] = useState({
+        totalTopics: 0,
+        completedTopics: 0,
+        totalQuizzes: 0,
+        avgScore: 0,
+        totalHoursLearned: 0,
+        streak: 0,
+    });
+    const [loading, setLoading] = useState(true);
 
-    const completionPercentage = Math.round((overallStats.completedTopics / overallStats.totalTopics) * 100);
+    useEffect(() => {
+        const fetchAll = async () => {
+            setLoading(true);
+            try {
+                const localMockRaw = localStorage.getItem('edutwin-mock-results');
+                let localMock: Array<{ topic?: string; percentage?: number; score?: number; maxScore?: number; createdAt?: string; timeTakenSec?: number }> = [];
+                if (localMockRaw) {
+                    try {
+                        localMock = JSON.parse(localMockRaw);
+                    } catch {
+                        localMock = [];
+                    }
+                }
+
+                const [statsRes, topicsRes] = await Promise.allSettled([
+                    usersAPI.stats(),
+                    topicsAPI.getAll(),
+                ]);
+
+                if (statsRes.status === 'fulfilled') {
+                    const s = statsRes.value.data?.data?.stats;
+                    if (s) {
+                        const localAvg = localMock.length > 0
+                            ? Math.round(localMock.reduce((sum, r) => sum + Number(r.percentage || 0), 0) / localMock.length)
+                            : 0;
+                        const localHours = localMock.length > 0
+                            ? Math.round(localMock.reduce((sum, r) => sum + Number(r.timeTakenSec || 0), 0) / 3600)
+                            : 0;
+
+                        setOverallStats({
+                            totalTopics: s.totalTopics ?? 0,
+                            completedTopics: s.topicsCompleted ?? 0,
+                            totalQuizzes: Math.max(s.quizzesTaken ?? 0, localMock.length),
+                            avgScore: Math.max(s.avgScore ?? 0, localAvg),
+                            totalHoursLearned: Math.max(s.totalHours ?? 0, localHours),
+                            streak: s.streak ?? 0,
+                        });
+                    }
+                }
+
+                if (topicsRes.status === 'fulfilled') {
+                    const topics = (topicsRes.value.data?.data?.topics || [])
+                        .filter((t: any) => t.status === 'completed')
+                        .map((t: any) => ({
+                            title: t.topicName || t.title,
+                            score: t.score ?? 0,
+                            total: t.total ?? 100,
+                            date: t.completedAt || '',
+                            videoWatched: true,
+                        }));
+
+                    const localCompleted = localMock
+                        .filter(r => typeof r.percentage === 'number')
+                        .slice(0, 20)
+                        .map((r) => ({
+                            title: r.topic || 'Mock Test',
+                            score: Number(r.score || 0),
+                            total: Number(r.maxScore || 100),
+                            date: r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '',
+                            videoWatched: true,
+                        }));
+
+                    setCompletedTopics(topics.length > 0 ? topics : localCompleted);
+                }
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchAll();
+    }, []);
+
+    const completionPercentage = overallStats.totalTopics > 0 ? Math.round((overallStats.completedTopics / overallStats.totalTopics) * 100) : 0;
 
     return (
         <>

@@ -1,12 +1,15 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
-import { User } from '../types';
-import { mockUser } from '../data/mockData';
+import { createContext, useContext, useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
+import type { User } from '../types';
+import { authAPI } from '../services/api';
 
 interface AuthContextType {
     user: User | null;
     isAuthenticated: boolean;
-    login: (email: string, password: string) => boolean;
-    signup: (name: string, email: string, password: string) => boolean;
+    loading: boolean;
+    backendError: boolean;
+    login: (email: string, password: string) => Promise<boolean>;
+    signup: (name: string, email: string, password: string) => Promise<boolean | string>;
     logout: () => void;
 }
 
@@ -14,27 +17,72 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [backendError, setBackendError] = useState(false);
 
-    const login = (email: string, _password: string): boolean => {
-        if (email) {
-            setUser({ ...mockUser, email });
-            return true;
+    // Auto-login from stored token on mount
+    useEffect(() => {
+        const token = localStorage.getItem('token');
+        if (token) {
+            authAPI.me()
+                .then(res => { setUser(res.data as User); setBackendError(false); })
+                .catch((err) => {
+                    localStorage.removeItem('token');
+                    if (err?.isNetworkError || err?.code === 'ERR_NETWORK') {
+                        setBackendError(true);
+                    }
+                })
+                .finally(() => setLoading(false));
+        } else {
+            setLoading(false);
         }
-        return false;
+    }, []);
+
+    const login = async (email: string, password: string): Promise<boolean> => {
+        try {
+            const res = await authAPI.login(email, password);
+            const { access_token, user: userData } = res.data;
+            localStorage.setItem('token', access_token);
+            setUser(userData as User);
+            setBackendError(false);
+            return true;
+        } catch (err: unknown) {
+            const error = err as { isNetworkError?: boolean; code?: string };
+            if (error?.isNetworkError || error?.code === 'ERR_NETWORK') {
+                setBackendError(true);
+            }
+            return false;
+        }
     };
 
-    const signup = (name: string, email: string, _password: string): boolean => {
-        if (name && email) {
-            setUser({ ...mockUser, name, email, completedTopics: [], pendingTopics: ['topic-1', 'topic-2', 'topic-3', 'topic-4', 'topic-5'], inProgressTopics: [], videosWatched: [], totalScore: 0, rank: 5 });
+    const signup = async (name: string, email: string, password: string): Promise<boolean | string> => {
+        try {
+            const res = await authAPI.signup(name, email, password);
+            const { access_token, user: userData } = res.data;
+            localStorage.setItem('token', access_token);
+            setUser(userData as User);
+            setBackendError(false);
             return true;
+        } catch (err: unknown) {
+            const error = err as { isNetworkError?: boolean; code?: string; response?: { status?: number } };
+            if (error?.isNetworkError || error?.code === 'ERR_NETWORK') {
+                setBackendError(true);
+            }
+            if (error?.response?.status === 409) {
+                return 'email_exists';
+            }
+            return false;
         }
-        return false;
     };
 
-    const logout = () => setUser(null);
+    const logout = () => {
+        authAPI.logout().catch(() => {});
+        localStorage.removeItem('token');
+        setUser(null);
+    };
 
     return (
-        <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, signup, logout }}>
+        <AuthContext.Provider value={{ user, isAuthenticated: !!user, loading, backendError, login, signup, logout }}>
             {children}
         </AuthContext.Provider>
     );

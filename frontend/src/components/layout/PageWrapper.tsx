@@ -9,9 +9,9 @@ interface PageWrapperProps {
 
 export const PageWrapper = ({ children, className = '', withPadding = true }: PageWrapperProps) => {
     return (
-        <div className={`min-h-screen relative flex flex-col ${className}`}>
+        <div className={`h-screen overflow-hidden relative flex flex-col ${className}`}>
             <BackgroundBlobs />
-            <main className={`flex-1 flex flex-col z-10 ${withPadding ? 'pt-24 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full' : ''}`}>
+            <main className={`flex-1 overflow-y-auto z-10 ${withPadding ? 'pt-24 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full' : ''}`}>
                 {children}
             </main>
         </div>

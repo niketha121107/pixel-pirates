@@ -9,12 +9,38 @@ logger = logging.getLogger(__name__)
 class YouTubeService:
     def __init__(self):
         self.api_key = settings.YOUTUBE_API_KEY
-        self.youtube = build(
-            settings.YOUTUBE_API_SERVICE_NAME, 
-            settings.YOUTUBE_API_VERSION, 
-            developerKey=self.api_key
-        )
-    
+        self._youtube = None
+        self._init_failed = False
+
+    @property
+    def youtube(self):
+        """Lazy-initialize YouTube client so import doesn't crash if key is bad."""
+        if self._youtube is None and not self._init_failed:
+            try:
+                self._youtube = build(
+                    settings.YOUTUBE_API_SERVICE_NAME,
+                    settings.YOUTUBE_API_VERSION,
+                    developerKey=self.api_key,
+                )
+            except Exception as e:
+                logger.error(f"Failed to initialize YouTube client: {e}")
+                self._init_failed = True
+        return self._youtube
+
+    async def search_for_topic(self, topic_name: str, language: str, max_results: int = 5) -> List[Dict[str, Any]]:
+        """Search YouTube for videos related to a specific topic.
+        Returns formatted video list or empty list on failure."""
+        if not self.api_key or not self.youtube:
+            logger.warning("YouTube API not available — no API key or client init failed")
+            return []
+
+        query = f"{language} {topic_name} tutorial programming"
+        try:
+            return await self.search_videos(query=query, max_results=max_results, duration="medium")
+        except Exception as e:
+            logger.error(f"YouTube search failed for topic '{topic_name}': {e}")
+            return []
+
     async def search_videos(
         self, 
         query: str, 
@@ -23,6 +49,10 @@ class YouTubeService:
         language: str = "en"
     ) -> List[Dict[str, Any]]:
         """Search for educational videos on YouTube"""
+        if not self.youtube:
+            logger.warning("YouTube client not available")
+            return []
+
         try:
             # Enhanced search query for educational content
             enhanced_query = f"{query} tutorial programming learn code explanation"

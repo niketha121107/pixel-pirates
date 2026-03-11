@@ -1,5 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../context/AuthContext';
+import { usersAPI } from '../services/api';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { MobileDrawer } from '../components/layout/MobileDrawer';
 import { Navbar } from '../components/layout/Navbar';
@@ -8,8 +10,6 @@ import { GlassCard } from '../components/ui/GlassCard';
 import { ProfileAvatar } from '../components/profile/ProfileAvatar';
 import { WallpaperSettings } from '../components/profile/WallpaperSettings';
 import type { WallpaperOption } from '../components/profile/WallpaperSettings';
-import { NoteSection, INITIAL_NOTES } from '../components/profile/NoteSection';
-import type { Note } from '../components/profile/NoteSection';
 import { MotivationalQuotes } from '../components/profile/MotivationalQuotes';
 import { useUserPreferences } from '../context/UserPreferencesContext';
 import {
@@ -19,55 +19,81 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-// ─── Mock User Data ───────────────────────────────────────────────────
-const USER_STATS = {
-    topicsCompleted: 5,
-    totalTopics: 12,
-    quizzesTaken: 5,
-    avgScore: 72,
-    streak: 12,
-    totalHours: 34,
-    joinDate: 'Jan 2026',
-    rank: 3,
-    badges: [
-        { name: 'First Quiz', icon: '🏅', earned: true },
-        { name: 'Week Streak', icon: '🔥', earned: true },
-        { name: 'Perfect Score', icon: '⭐', earned: true },
-        { name: 'Night Owl', icon: '🦉', earned: true },
-        { name: 'Speed Demon', icon: '⚡', earned: false },
-        { name: 'Completionist', icon: '🏆', earned: false },
-        { name: 'Social Learner', icon: '🤝', earned: false },
-        { name: 'Top 10', icon: '🥇', earned: false },
-    ],
-    languages: [
-        { name: 'Python', level: 78, color: 'bg-blue-500' },
-        { name: 'Java', level: 55, color: 'bg-orange-500' },
-        { name: 'C', level: 65, color: 'bg-gray-600' },
-        { name: 'SQL', level: 70, color: 'bg-emerald-500' },
-        { name: 'JavaScript', level: 30, color: 'bg-yellow-500' },
-    ],
-};
-
 export const UserProfile = () => {
+    const { user } = useAuth();
     const { preferences, savePreferences } = useUserPreferences();
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
+    const [USER_STATS, setUserStats] = useState({
+        topicsCompleted: 0,
+        totalTopics: 0,
+        quizzesTaken: 0,
+        avgScore: 0,
+        streak: 0,
+        totalHours: 0,
+        joinDate: '',
+        rank: 0,
+        badges: [] as { name: string; icon: string; earned: boolean }[],
+        languages: [] as { name: string; level: number; color: string }[],
+    });
 
     // Pending (unsaved) selections — initialised from saved prefs
     const [pendingAvatar, setPendingAvatar] = useState(preferences.avatar);
     const [pendingWallpaper, setPendingWallpaper] = useState(preferences.wallpaperId);
 
-    const [notes, setNotes] = useState<Note[]>(INITIAL_NOTES);
+
     const [profile, setProfile] = useState({
-        name: 'Alex Thompson',
-        username: '@alexcoder',
-        email: 'alex.thompson@university.edu',
-        bio: 'CS student passionate about algorithms and web dev. Currently mastering Python and data structures. Always eager to learn something new! 🚀',
-        location: 'San Francisco, CA',
-        university: 'Stanford University',
-        year: '3rd Year CS',
+        name: user?.name || '',
+        username: `@${(user?.name || '').toLowerCase().replace(/\s+/g, '')}`,
+        email: user?.email || '',
+        bio: '',
+        location: '',
+        university: '',
+        year: '',
     });
     const [editProfile, setEditProfile] = useState(profile);
+
+    useEffect(() => {
+        usersAPI.stats()
+            .then(res => {
+                const s = res.data?.data?.stats;
+                if (s) {
+                    setUserStats(prev => ({
+                        ...prev,
+                        topicsCompleted: s.topicsCompleted ?? 0,
+                        totalTopics: s.totalTopics ?? 0,
+                        quizzesTaken: s.quizzesTaken ?? 0,
+                        avgScore: s.avgScore ?? 0,
+                        streak: s.streak ?? 0,
+                        totalHours: s.totalHours ?? 0,
+                        joinDate: s.joinDate || '',
+                        rank: s.rank ?? 0,
+                        badges: Array.isArray(s.badges) ? s.badges : prev.badges,
+                        languages: Array.isArray(s.languages) ? s.languages : prev.languages,
+                    }));
+                }
+            })
+            .catch(() => {});
+
+        usersAPI.profile()
+            .then(res => {
+                const p = res.data?.data?.user;
+                if (p) {
+                    const updatedProfile = {
+                        name: p.name || user?.name || '',
+                        username: p.username || `@${(user?.name || '').toLowerCase().replace(/\s+/g, '')}`,
+                        email: p.email || user?.email || '',
+                        bio: p.bio || '',
+                        location: p.location || '',
+                        university: p.university || '',
+                        year: p.year || '',
+                    };
+                    setProfile(updatedProfile);
+                    setEditProfile(updatedProfile);
+                }
+            })
+            .catch(() => {});
+    }, []);
 
     // Detect unsaved changes
     const hasUnsavedChanges = useMemo(
@@ -75,8 +101,26 @@ export const UserProfile = () => {
         [pendingAvatar, pendingWallpaper, preferences.avatar, preferences.wallpaperId]
     );
 
-    const handleSaveProfile = () => {
-        setProfile(editProfile);
+    const handleSaveProfile = async () => {
+        try {
+            await usersAPI.updateProfile({
+                name: editProfile.name,
+                username: editProfile.username,
+                bio: editProfile.bio,
+                location: editProfile.location,
+                university: editProfile.university,
+                year: editProfile.year,
+            });
+            setProfile(editProfile);
+        } catch {
+            // Fallback to local update
+            setProfile(editProfile);
+        }
+        setIsEditing(false);
+    };
+
+    const handleCancelEditing = () => {
+        setEditProfile(profile);
         setIsEditing(false);
     };
 
@@ -159,6 +203,16 @@ export const UserProfile = () => {
 
                 <div className={`pt-24 pb-12 px-4 sm:px-6 lg:px-8 w-full max-w-6xl mx-auto space-y-6 transition-all ${hasUnsavedChanges ? 'mt-14' : ''}`}>
 
+                    {/* ═══ Welcome Greeting ═══ */}
+                    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+                        <GlassCard className="p-6 bg-gradient-to-r from-brand/5 via-pink-50 to-orange-50">
+                            <h1 className="text-2xl md:text-3xl font-bold text-gray-800">
+                                Welcome back, <span className="text-gradient">{user?.name?.split(' ')[0] || 'Learner'}</span>! 👋
+                            </h1>
+                            <p className="text-gray-500 mt-1">Great to see you again. Keep up the amazing learning streak!</p>
+                        </GlassCard>
+                    </motion.div>
+
                     {/* ═══ Profile Header - Snap-style ═══ */}
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                         <GlassCard className="overflow-hidden">
@@ -174,93 +228,112 @@ export const UserProfile = () => {
                                     <ProfileAvatar currentAvatar={pendingAvatar} onAvatarChange={setPendingAvatar} />
 
                                     <div className="flex-1 pt-2 sm:pt-0 sm:pb-2">
-                                        {isEditing ? (
-                                            <div className="space-y-2">
-                                                <input
-                                                    value={editProfile.name}
-                                                    onChange={(e) => setEditProfile({ ...editProfile, name: e.target.value })}
-                                                    className="text-xl font-bold text-gray-800 bg-pink-50/50 border border-pink-200 rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-brand/30 w-full sm:w-auto"
-                                                />
-                                                <input
-                                                    value={editProfile.username}
-                                                    onChange={(e) => setEditProfile({ ...editProfile, username: e.target.value })}
-                                                    className="text-sm text-gray-500 bg-pink-50/50 border border-pink-200 rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-brand/30 block"
-                                                />
-                                            </div>
-                                        ) : (
-                                            <div>
-                                                <h1 className="text-2xl font-bold text-gray-800">{profile.name}</h1>
-                                                <p className="text-sm text-gray-500 font-medium">{profile.username}</p>
-                                            </div>
-                                        )}
+                                        <div>
+                                            <h1 className="text-2xl font-bold text-gray-800">{profile.name}</h1>
+                                            <p className="text-sm text-gray-500 font-medium">{profile.username}</p>
+                                        </div>
                                     </div>
 
                                     <motion.button
                                         whileHover={{ scale: 1.05 }}
                                         whileTap={{ scale: 0.95 }}
-                                        onClick={() => isEditing ? handleSaveProfile() : setIsEditing(true)}
+                                        onClick={() => setIsEditing(true)}
+                                        disabled={isEditing}
                                         className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all self-start sm:self-end ${
                                             isEditing
-                                                ? 'bg-brand text-white shadow-md'
+                                                ? 'bg-brand/20 text-brand cursor-default'
                                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                         }`}
                                     >
-                                        {isEditing ? <><Save className="w-4 h-4" /> Save</> : <><Edit3 className="w-4 h-4" /> Edit Profile</>}
+                                        {isEditing ? <><Edit3 className="w-4 h-4" /> Editing...</> : <><Edit3 className="w-4 h-4" /> Edit Profile</>}
                                     </motion.button>
                                 </div>
 
                                 {/* Bio & Details */}
                                 <div className="mt-4 space-y-3">
-                                    {isEditing ? (
-                                        <textarea
-                                            value={editProfile.bio}
-                                            onChange={(e) => setEditProfile({ ...editProfile, bio: e.target.value })}
-                                            rows={2}
-                                            className="w-full text-sm text-gray-600 bg-pink-50/50 border border-pink-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand/30 resize-none"
-                                        />
-                                    ) : (
-                                        <p className="text-sm text-gray-600 leading-relaxed max-w-xl">{profile.bio}</p>
-                                    )}
+                                    <p className="text-sm text-gray-600 leading-relaxed max-w-xl">{profile.bio}</p>
 
                                     <div className="flex flex-wrap gap-3 text-xs text-gray-500">
-                                        {isEditing ? (
-                                            <>
-                                                <div className="flex items-center gap-1.5">
-                                                    <MapPin className="w-3.5 h-3.5" />
-                                                    <input
-                                                        value={editProfile.location}
-                                                        onChange={(e) => setEditProfile({ ...editProfile, location: e.target.value })}
-                                                        className="bg-pink-50/50 border border-pink-200 rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand/30"
-                                                    />
-                                                </div>
-                                                <div className="flex items-center gap-1.5">
-                                                    <GraduationCap className="w-3.5 h-3.5" />
-                                                    <input
-                                                        value={editProfile.university}
-                                                        onChange={(e) => setEditProfile({ ...editProfile, university: e.target.value })}
-                                                        className="bg-pink-50/50 border border-pink-200 rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand/30"
-                                                    />
-                                                </div>
-                                                <div className="flex items-center gap-1.5">
-                                                    <Mail className="w-3.5 h-3.5" />
-                                                    <input
-                                                        value={editProfile.email}
-                                                        onChange={(e) => setEditProfile({ ...editProfile, email: e.target.value })}
-                                                        className="bg-pink-50/50 border border-pink-200 rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand/30"
-                                                    />
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> {profile.location}</span>
-                                                <span className="flex items-center gap-1.5"><GraduationCap className="w-3.5 h-3.5" /> {profile.university}</span>
-                                                <span className="flex items-center gap-1.5"><Code2 className="w-3.5 h-3.5" /> {profile.year}</span>
-                                                <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> {profile.email}</span>
-                                                <span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Joined {USER_STATS.joinDate}</span>
-                                            </>
-                                        )}
+                                        <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> {profile.location}</span>
+                                        <span className="flex items-center gap-1.5"><GraduationCap className="w-3.5 h-3.5" /> {profile.university}</span>
+                                        <span className="flex items-center gap-1.5"><Code2 className="w-3.5 h-3.5" /> {profile.year}</span>
+                                        <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> {profile.email}</span>
+                                        <span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Joined {USER_STATS.joinDate}</span>
                                     </div>
                                 </div>
+
+                                {/* Edit box below profile pic/header */}
+                                <AnimatePresence>
+                                    {isEditing && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 8 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: 8 }}
+                                            className="mt-5 rounded-2xl border border-pink-200 bg-pink-50/40 p-4 sm:p-5"
+                                        >
+                                            <h3 className="text-sm font-bold text-gray-800 mb-3">Edit Profile</h3>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                <input
+                                                    value={editProfile.name}
+                                                    onChange={(e) => setEditProfile({ ...editProfile, name: e.target.value })}
+                                                    placeholder="Name"
+                                                    className="text-sm bg-white border border-pink-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand/30"
+                                                />
+                                                <input
+                                                    value={editProfile.username}
+                                                    onChange={(e) => setEditProfile({ ...editProfile, username: e.target.value })}
+                                                    placeholder="Username"
+                                                    className="text-sm bg-white border border-pink-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand/30"
+                                                />
+                                                <input
+                                                    value={editProfile.location}
+                                                    onChange={(e) => setEditProfile({ ...editProfile, location: e.target.value })}
+                                                    placeholder="Location"
+                                                    className="text-sm bg-white border border-pink-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand/30"
+                                                />
+                                                <input
+                                                    value={editProfile.university}
+                                                    onChange={(e) => setEditProfile({ ...editProfile, university: e.target.value })}
+                                                    placeholder="University"
+                                                    className="text-sm bg-white border border-pink-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand/30"
+                                                />
+                                                <input
+                                                    value={editProfile.year}
+                                                    onChange={(e) => setEditProfile({ ...editProfile, year: e.target.value })}
+                                                    placeholder="Year"
+                                                    className="text-sm bg-white border border-pink-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand/30"
+                                                />
+                                                <input
+                                                    value={editProfile.email}
+                                                    onChange={(e) => setEditProfile({ ...editProfile, email: e.target.value })}
+                                                    placeholder="Email"
+                                                    className="text-sm bg-white border border-pink-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand/30"
+                                                />
+                                            </div>
+                                            <textarea
+                                                value={editProfile.bio}
+                                                onChange={(e) => setEditProfile({ ...editProfile, bio: e.target.value })}
+                                                rows={3}
+                                                placeholder="Bio"
+                                                className="mt-3 w-full text-sm bg-white border border-pink-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand/30 resize-none"
+                                            />
+                                            <div className="mt-4 flex items-center justify-end gap-2">
+                                                <button
+                                                    onClick={handleCancelEditing}
+                                                    className="px-4 py-2 rounded-xl text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    onClick={handleSaveProfile}
+                                                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-brand hover:bg-brand/90"
+                                                >
+                                                    <Save className="w-4 h-4" /> Save
+                                                </button>
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
                         </GlassCard>
                     </motion.div>
@@ -326,43 +399,14 @@ export const UserProfile = () => {
                                 </GlassCard>
                             </motion.div>
 
-                            {/* Language Skills */}
-                            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
-                                <GlassCard className="p-6">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-400 flex items-center justify-center">
-                                            <Code2 className="w-5 h-5 text-white" />
-                                        </div>
-                                        <div>
-                                            <h3 className="font-bold text-gray-800">Language Skills</h3>
-                                            <p className="text-xs text-gray-500">Your proficiency levels</p>
-                                        </div>
-                                    </div>
-                                    <div className="space-y-3">
-                                        {USER_STATS.languages.map((lang) => (
-                                            <div key={lang.name}>
-                                                <div className="flex justify-between mb-1">
-                                                    <span className="text-xs font-semibold text-gray-700">{lang.name}</span>
-                                                    <span className="text-xs text-gray-500">{lang.level}%</span>
-                                                </div>
-                                                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                                                    <motion.div
-                                                        initial={{ width: 0 }}
-                                                        animate={{ width: `${lang.level}%` }}
-                                                        transition={{ duration: 1, delay: 0.5 }}
-                                                        className={`h-full rounded-full ${lang.color}`}
-                                                    />
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </GlassCard>
-                            </motion.div>
+
 
                             {/* Motivational Quotes */}
                             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-                                <MotivationalQuotes />
+                                <MotivationalQuotes streak={USER_STATS.streak} />
                             </motion.div>
+
+
                         </div>
 
                         {/* Right Column: Notes + Wallpaper */}
@@ -370,11 +414,6 @@ export const UserProfile = () => {
                             {/* Wallpaper Settings */}
                             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
                                 <WallpaperSettings currentWallpaper={pendingWallpaper} onWallpaperChange={handleWallpaperChange} />
-                            </motion.div>
-
-                            {/* Notes Section */}
-                            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-                                <NoteSection notes={notes} onNotesChange={setNotes} />
                             </motion.div>
                         </div>
                     </div>
@@ -392,8 +431,8 @@ export const UserProfile = () => {
                             </h3>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                 {[
-                                    { label: 'Dashboard', to: '/dashboard', icon: <TrendingUp className="w-5 h-5" />, color: 'from-brand to-pink-400' },
-                                    { label: 'Leaderboard', to: '/leaderboard', icon: <Trophy className="w-5 h-5" />, color: 'from-yellow-400 to-amber-400' },
+                                    { label: 'Topics', to: '/videos', icon: <BookOpen className="w-5 h-5" />, color: 'from-brand to-pink-400' },
+                                    { label: 'Notes', to: '/notes', icon: <Star className="w-5 h-5" />, color: 'from-yellow-400 to-amber-400' },
                                     { label: 'Analytics', to: '/analytics', icon: <Target className="w-5 h-5" />, color: 'from-blue-400 to-indigo-400' },
                                     { label: 'Progress', to: '/progress', icon: <Star className="w-5 h-5" />, color: 'from-emerald-400 to-teal-400' },
                                 ].map((action) => (

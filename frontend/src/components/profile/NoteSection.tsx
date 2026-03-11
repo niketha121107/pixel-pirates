@@ -60,52 +60,7 @@ const HIGHLIGHT_COLORS = [
     { name: 'Orange', value: '#fcd5b5', class: 'bg-orange-200' },
 ];
 
-const INITIAL_NOTES: Note[] = [
-    {
-        id: '1',
-        title: 'Python Decorators Pattern',
-        content: 'Decorators wrap a function, modifying its behavior. Use @decorator syntax above function definition. Key for understanding Flask routes and Django views.',
-        importance: 'critical',
-        topic: 'Python Functions & Scope',
-        pinned: true,
-        highlighted: true,
-        createdAt: '2026-02-20',
-        color: '#fef08a',
-    },
-    {
-        id: '2',
-        title: 'Big O Notation Summary',
-        content: 'O(1) < O(log n) < O(n) < O(n log n) < O(n²) < O(2ⁿ). Always analyze worst-case. Space complexity matters too!',
-        importance: 'high',
-        topic: 'Data Structures Overview',
-        pinned: true,
-        highlighted: false,
-        createdAt: '2026-02-18',
-        color: '#fbb6ce',
-    },
-    {
-        id: '3',
-        title: 'SQL JOIN Types',
-        content: 'INNER JOIN = matching rows. LEFT JOIN = all left + matching right. RIGHT JOIN = all right + matching left. FULL OUTER = all rows from both.',
-        importance: 'medium',
-        topic: 'SQL Fundamentals',
-        pinned: false,
-        highlighted: true,
-        createdAt: '2026-02-15',
-        color: '#a7f3d0',
-    },
-    {
-        id: '4',
-        title: 'Pointer Arithmetic in C',
-        content: 'ptr++ moves to next element (not next byte). Array name is a pointer to first element. Use & for address, * for dereference.',
-        importance: 'high',
-        topic: 'C Pointers Introduction',
-        pinned: false,
-        highlighted: false,
-        createdAt: '2026-02-12',
-        color: '#bae6fd',
-    },
-];
+
 
 interface NoteSectionProps {
     notes: Note[];
@@ -398,4 +353,4 @@ export const NoteSection = ({ notes, onNotesChange }: NoteSectionProps) => {
     );
 };
 
-export { INITIAL_NOTES };
+

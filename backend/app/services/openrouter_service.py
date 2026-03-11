@@ -12,6 +12,8 @@ class OpenRouterService:
         self.api_key = settings.OPENROUTER_API_KEY
         self.base_url = settings.OPENROUTER_BASE_URL
         self.model = settings.OPENROUTER_MODEL
+        self.ollama_base_url = settings.OLLAMA_BASE_URL.rstrip("/")
+        self.ollama_model = settings.OLLAMA_MODEL
         
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -19,6 +21,47 @@ class OpenRouterService:
             "X-Title": "Pixel Pirates Learning Platform",
             "Content-Type": "application/json"
         }
+
+    async def _chat_with_ollama(self, message: str, history: list = None, user_name: str = "Student") -> str:
+        """Try local Ollama first so chatbot can work without cloud API keys."""
+        if not self.ollama_model:
+            return ""
+
+        try:
+            sys_prompt = (
+                "You are EduTwin AI, a helpful coding tutor. "
+                f"Student name: {user_name}. "
+                "Answer clearly, with concrete examples, and keep answers relevant to the exact question. "
+                "Do not repeat the same answer for different questions."
+            )
+
+            messages = [{"role": "system", "content": sys_prompt}]
+            if history:
+                messages.extend(history[-8:])
+            messages.append({"role": "user", "content": message})
+
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                response = await client.post(
+                    f"{self.ollama_base_url}/api/chat",
+                    json={
+                        "model": self.ollama_model,
+                        "messages": messages,
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.7,
+                            "top_p": 0.9,
+                        },
+                    },
+                )
+
+            if response.status_code != 200:
+                return ""
+
+            data = response.json()
+            return (data.get("message") or {}).get("content", "").strip()
+        except Exception as e:
+            logger.info(f"Ollama chat unavailable: {e}")
+            return ""
     
     async def generate_adaptive_quiz(
         self,
@@ -112,6 +155,74 @@ class OpenRouterService:
             logger.error(f"Error generating mock test: {e}")
             return {"questions": [], "metadata": {}}
     
+    async def chat(
+        self,
+        message: str,
+        history: list = None,
+        user_name: str = "Student",
+    ) -> str:
+        """Generate a conversational AI tutor response"""
+        try:
+            # Prefer local Llama (Ollama) if available.
+            ollama_response = await self._chat_with_ollama(message=message, history=history, user_name=user_name)
+            if ollama_response:
+                return ollama_response
+
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are EduTwin AI, a warm and supportive learning buddy on the Pixel Pirates platform. "
+                        f"The student's name is {user_name}. "
+                        "Talk like a caring friend — be casual, encouraging, and patient. "
+                        "Use simple language. It's okay to use a few emojis to keep things fun. "
+                        "If they seem stressed, reassure them that learning takes time and it's totally normal to struggle. "
+                        "Give clear, bite-sized explanations with code examples when helpful. "
+                        "Always end with an encouraging note or a follow-up question to keep the conversation going. "
+                        "Never be condescending. Celebrate their curiosity."
+                    ),
+                },
+            ]
+
+            # Append recent conversation history (last 10 messages)
+            if history:
+                for h in history[-10:]:
+                    messages.append({"role": h["role"], "content": h["content"]})
+
+            messages.append({"role": "user", "content": message})
+
+            logger.info(f"Sending chat request to OpenRouter (model={self.model}, msgs={len(messages)})")
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=self.headers,
+                    json={
+                        "model": self.model,
+                        "messages": messages,
+                        "temperature": 0.8,
+                        "max_tokens": 1200,
+                    },
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    content = result["choices"][0]["message"]["content"].strip()
+                    # Some thinking models wrap output in <think> tags — strip those
+                    if "<think>" in content:
+                        import re
+                        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                    logger.info("OpenRouter chat response received successfully")
+                    return content
+                else:
+                    body = response.text[:500]
+                    logger.error(f"OpenRouter chat API error {response.status_code}: {body}")
+                    return ""
+
+        except Exception as e:
+            logger.error(f"Error in AI chat: {e}")
+            return ""
+
     async def get_personalized_explanation(
         self,
         topic: str,

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from datetime import datetime, timedelta
 from typing import Dict, Any
 from app.models import UserLogin, UserCreate, UserResponse, AuthToken, SuccessResponse, ErrorResponse
-from app.data import get_user_by_email, get_user_by_id, MOCK_USERS
+from app.data import get_user_by_email, get_user_by_id, MOCK_USERS, MOCK_TOPICS, create_user
 from app.core.auth import auth_utils, get_current_user_from_token
 from app.core.config import settings
 import uuid
@@ -57,28 +57,10 @@ async def signup(user_data: UserCreate):
             detail="User with this email already exists"
         )
     
-    # Create new user with hashed password
-    new_user_id = str(uuid.uuid4())
+    # Create new user via data layer (persists to MongoDB)
     hashed_password = auth_utils.get_password_hash(user_data.password)
-    
-    new_user = {
-        "id": new_user_id,
-        "name": user_data.name,
-        "email": user_data.email,
-        "password": hashed_password,
-        "completedTopics": [],
-        "pendingTopics": ["topic-1", "topic-2"],
-        "inProgressTopics": [],
-        "videosWatched": [],
-        "totalScore": 0,
-        "rank": len(MOCK_USERS) + 1,
-        "preferredStyle": "visual",
-        "confusionCount": 0,
-        "createdAt": datetime.now().isoformat(),
-        "updatedAt": datetime.now().isoformat()
-    }
-    
-    MOCK_USERS[new_user_id] = new_user
+    new_user_id = create_user(user_data.email, user_data.name, hashed_password)
+    new_user = MOCK_USERS[new_user_id]
     
     # Generate access token
     access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -88,8 +70,10 @@ async def signup(user_data: UserCreate):
     )
     
     # Prepare user response (without password)
-    user_data = {k: v for k, v in new_user.items() if k != "password"}
-    user_response = UserResponse(**user_data)
+    user_resp = {k: v for k, v in new_user.items() if k != "password"}
+    user_resp.setdefault("createdAt", None)
+    user_resp.setdefault("updatedAt", None)
+    user_response = UserResponse(**user_resp)
     
     return AuthToken(
         access_token=access_token,

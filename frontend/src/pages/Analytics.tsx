@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { analyticsAPI } from '../services/api';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { Navbar } from '../components/layout/Navbar';
 import { Sidebar } from '../components/layout/Sidebar';
@@ -11,16 +12,79 @@ import { motion } from 'framer-motion';
 
 export const Analytics = () => {
     const [drawerOpen, setDrawerOpen] = useState(false);
+    const [data, setData] = useState<{ name: string; xp: number }[]>([]);
+    const [weakTopics, setWeakTopics] = useState<{ title: string; subject: string; progress: number }[]>([]);
+    const [stats, setStats] = useState({ accuracy: '—', topicsMastered: '—', totalXP: '—', weakAreas: '—' });
+    const [, setLoading] = useState(false);
 
-    const data = [
-        { name: 'Mon', xp: 120 },
-        { name: 'Tue', xp: 300 },
-        { name: 'Wed', xp: 250 },
-        { name: 'Thu', xp: 450 },
-        { name: 'Fri', xp: 390 },
-        { name: 'Sat', xp: 600 },
-        { name: 'Sun', xp: 800 },
-    ];
+    useEffect(() => {
+        const fetchAll = async () => {
+            setLoading(true);
+            try {
+                const [dashRes, progressRes, perfRes] = await Promise.allSettled([
+                    analyticsAPI.dashboard(),
+                    analyticsAPI.progress('7d'),
+                    analyticsAPI.performance(),
+                ]);
+
+                // Get weak areas count from performance endpoint
+                let weakCount = 0;
+                if (perfRes.status === 'fulfilled') {
+                    const weakAreas = perfRes.value.data?.data?.performance?.weakAreas;
+                    if (Array.isArray(weakAreas)) weakCount = weakAreas.length;
+                }
+
+                if (dashRes.status === 'fulfilled') {
+                    const overview = dashRes.value.data?.data?.analytics?.overview;
+                    if (overview) {
+                        setStats({
+                            accuracy: `${Math.round(overview.averageScore || 0)}%`,
+                            topicsMastered: String(overview.completedTopics ?? 0),
+                            totalXP: `${overview.totalStudyTime ?? 0}h`,
+                            weakAreas: String(weakCount),
+                        });
+                    }
+                }
+
+                if (progressRes.status === 'fulfilled') {
+                    const progressData = progressRes.value.data?.data?.analytics?.progressData;
+                    if (Array.isArray(progressData) && progressData.length > 0) {
+                        const chartData = progressData.map((d: any) => ({
+                            name: d.date ? new Date(d.date).toLocaleDateString('en', { weekday: 'short' }) : '',
+                            xp: d.cumulativeScore || d.dailyGain || 0,
+                        }));
+                        setData(chartData);
+                    }
+                }
+
+                if (perfRes.status === 'fulfilled') {
+                    const weakAreas = perfRes.value.data?.data?.performance?.weakAreas;
+                    if (Array.isArray(weakAreas) && weakAreas.length > 0) {
+                        const mapped = weakAreas.slice(0, 3).map((w: any) => ({
+                            title: w.area || w.topic || w.topicName || 'Unknown',
+                            subject: w.language || w.area || '',
+                            progress: w.score ?? w.accuracy ?? 30,
+                        }));
+                        setWeakTopics(mapped);
+                    } else {
+                        // No weak areas — show strong areas instead as reference
+                        const strongAreas = perfRes.value.data?.data?.performance?.strongAreas;
+                        if (Array.isArray(strongAreas) && strongAreas.length > 0) {
+                            const mapped = strongAreas.slice(0, 3).map((s: any) => ({
+                                title: s.area || 'Unknown',
+                                subject: 'Strong',
+                                progress: s.score ?? 0,
+                            }));
+                            setWeakTopics(mapped);
+                        }
+                    }
+                }
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchAll();
+    }, []);
 
     return (
         <>
@@ -43,24 +107,22 @@ export const Analytics = () => {
                     >
                         <StatCard
                             title="Global Accuracy"
-                            value="84%"
+                            value={stats.accuracy}
                             icon={<Activity className="w-6 h-6" />}
-                            trend={{ isPositive: true, value: "2.5%" }}
                         />
                         <StatCard
                             title="Topics Mastered"
-                            value="12"
+                            value={stats.topicsMastered}
                             icon={<BookCheck className="w-6 h-6" />}
                         />
                         <StatCard
-                            title="Total XP Gained"
-                            value="8,402"
+                            title="Study Hours"
+                            value={stats.totalXP}
                             icon={<BrainCircuit className="w-6 h-6" />}
-                            trend={{ isPositive: true, value: "850 today" }}
                         />
                         <StatCard
                             title="Weak Areas"
-                            value="2"
+                            value={stats.weakAreas}
                             icon={<AlertTriangle className="w-6 h-6 text-status-error" />}
                             className="border-status-error/20"
                         />
@@ -72,7 +134,7 @@ export const Analytics = () => {
                         className="grid grid-cols-1 lg:grid-cols-3 gap-6"
                     >
                         <GlassCard className="lg:col-span-2 p-6">
-                            <h3 className="text-xl font-bold text-gray-800 mb-6">Learning Activity (XP)</h3>
+                            <h3 className="text-xl font-bold text-gray-800 mb-6">Learning Progress</h3>
                             <div className="h-[300px] w-full">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -103,13 +165,9 @@ export const Analytics = () => {
                         </GlassCard>
 
                         <GlassCard className="p-6">
-                            <h3 className="text-xl font-bold text-gray-800 mb-6">Weakest Topics</h3>
+                            <h3 className="text-xl font-bold text-gray-800 mb-6">Topic Performance</h3>
                             <div className="space-y-4">
-                                {[
-                                    { title: "Pointer Arithmetic", subject: "C", progress: 25 },
-                                    { title: "Red Black Trees", subject: "Java", progress: 40 },
-                                    { title: "Async/Await", subject: "JavaScript", progress: 55 }
-                                ].map((item, i) => (
+                                {weakTopics.map((item, i) => (
                                     <div key={i} className="bg-gray-50 p-4 rounded-xl border border-gray-200">
                                         <div className="flex justify-between text-sm mb-2">
                                             <span className="font-bold text-gray-800">{item.title}</span>
@@ -129,3 +187,4 @@ export const Analytics = () => {
         </>
     );
 };
+

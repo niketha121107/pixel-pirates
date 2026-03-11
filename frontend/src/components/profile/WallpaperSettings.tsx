@@ -282,28 +282,19 @@ export const WallpaperSettings = ({ currentWallpaper, onWallpaperChange }: Wallp
                                     : 'border-gray-200 hover:border-brand/40'
                             }`}
                         >
-                            {/* Wallpaper preview — image or gradient */}
-                            {w.imageUrl ? (
-                                <img
-                                    src={w.imageUrl}
-                                    alt={w.name}
-                                    loading="lazy"
-                                    className="absolute inset-0 w-full h-full object-cover"
-                                />
-                            ) : (
-                                <div className={`absolute inset-0 ${w.preview}`}>
-                                    {w.blobColors.map((color, i) => (
-                                        <div
-                                            key={i}
-                                            className={`absolute w-8 h-8 rounded-full blur-md ${color}`}
-                                            style={{
-                                                top: `${20 + i * 25}%`,
-                                                left: `${10 + i * 30}%`,
-                                            }}
-                                        />
-                                    ))}
-                                </div>
-                            )}
+                            {/* Always local preview to avoid external image certificate failures */}
+                            <div className={`absolute inset-0 ${w.preview}`}>
+                                {w.blobColors.map((color, i) => (
+                                    <div
+                                        key={i}
+                                        className={`absolute w-8 h-8 rounded-full blur-md ${color}`}
+                                        style={{
+                                            top: `${20 + i * 25}%`,
+                                            left: `${10 + i * 30}%`,
+                                        }}
+                                    />
+                                ))}
+                            </div>
 
                             {/* Selected indicator */}
                             {isActive && (

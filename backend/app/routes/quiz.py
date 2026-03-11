@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from app.models import QuizSubmission, QuizResult, SuccessResponse
 from app.data import get_topic_by_id, get_user_by_id, update_user_topic_progress
-from app.services.openrouter_service import openrouter_service
+from app.services.adaptive_engine_service import adaptive_engine_service
 from app.core.auth import get_current_user_from_token
 
 router = APIRouter()
@@ -12,6 +12,17 @@ class MockTestRequest(BaseModel):
     topics: List[str]
     difficulty_mix: Dict[str, int]  # {"Beginner": 5, "Intermediate": 3, "Advanced": 2}
     total_questions: int = 15
+
+
+def _normalize_mock_type(raw_type: Any, index: int) -> str:
+    raw = str(raw_type or '').strip().lower()
+    if raw in {"mcq", "multiple_choice", "multiple-choice", "choose"}:
+        return "mcq"
+    if raw in {"fillup", "fill_up", "fillintheblank", "fill-in-the-blank", "blank"}:
+        return "fillup"
+    if raw in {"written", "qa", "q&a", "subjective", "essay"}:
+        return "written"
+    return ["mcq", "fillup", "written"][index % 3]
 
 @router.post("/submit", response_model=SuccessResponse)
 async def submit_quiz(
@@ -59,15 +70,29 @@ async def submit_quiz(
     else:
         update_user_topic_progress(current_user["id"], submission.topic_id, "in-progress")
     
-    # Generate personalized feedback using AI
+    # Generate evaluation feedback via adaptive engine (Gemini), fallback on failure.
+    ai_weak_areas = []
     try:
-        feedback = await openrouter_service.get_personalized_explanation(
-            topic=f"Quiz results for {topic['topicName']}",
-            user_preferred_style=current_user.get("preferredStyle", "visual"),
-            difficulty_level=topic.get("difficulty", "Beginner"),
-            additional_context=f"User scored {percentage:.1f}% on this quiz"
+        evaluation = await adaptive_engine_service.evaluate_quiz_attempt(
+            topic_name=topic["topicName"],
+            percentage=percentage,
+            correct_count=correct_count,
+            total_questions=total_questions,
+            incorrect_question_ids=incorrect_answers,
+            preferred_style=current_user.get("preferredStyle", "visual"),
         )
-    except:
+        feedback = evaluation.get("feedback") or "Great effort on the quiz! Keep practicing these concepts."
+        ai_weak_areas = [
+            {
+                "questionId": "",
+                "topic": topic["topicName"],
+                "concept": wa.get("concept", "General"),
+                "recommendation": wa.get("recommendation", "Practice more questions for this concept."),
+            }
+            for wa in evaluation.get("weakAreas", [])
+            if isinstance(wa, dict)
+        ]
+    except Exception:
         feedback = "Great effort on the quiz! Keep practicing these concepts."
     
     result = QuizResult(
@@ -87,7 +112,7 @@ async def submit_quiz(
             "result": result.dict(),
             "passed": percentage >= 70,
             "feedback": feedback,
-            "weakAreas": weak_areas,
+            "weakAreas": ai_weak_areas or weak_areas,
             "message": "Congratulations! You passed!" if percentage >= 70 else "Keep practicing and try again!"
         }
     )
@@ -117,12 +142,12 @@ async def generate_adaptive_quiz(
             {"topic": "Variables", "score": 85, "attempts": 1},
         ]
         
-        # Generate adaptive quiz using AI
-        adaptive_questions = await openrouter_service.generate_adaptive_quiz(
-            topic=topic["topicName"],
+        # Generate adaptive quiz using adaptive engine (Gemini)
+        adaptive_questions = await adaptive_engine_service.generate_adaptive_quiz(
+            topic_name=topic["topicName"],
             difficulty=topic["difficulty"],
             user_performance_history=performance_history,
-            question_count=question_count
+            question_count=question_count,
         )
         
         if not adaptive_questions:
@@ -160,13 +185,13 @@ async def generate_mock_test(
     test_request: MockTestRequest,
     current_user: dict = Depends(get_current_user_from_token)
 ):
-    """Generate a comprehensive mock test using AI"""
+    """Generate a comprehensive mock test using Gemini AI"""
     try:
-        # Try to generate mock test using OpenRouter AI with a short timeout
+        # Try to generate mock test using Gemini AI with a short timeout
         import asyncio
         try:
             mock_test = await asyncio.wait_for(
-                openrouter_service.generate_mock_test(
+                adaptive_engine_service.generate_mock_test(
                     topics=test_request.topics,
                     difficulty_mix=test_request.difficulty_mix,
                     total_questions=test_request.total_questions
@@ -181,19 +206,92 @@ async def generate_mock_test(
             fallback_questions = []
             from app.data import get_all_topics
             all_topics = get_all_topics()
-            
-            for topic in all_topics[:3]:  # Limit to 3 topics for fallback
-                fallback_questions.extend(topic["quiz"][:5])
+
+            for topic in all_topics:
+                for q in topic.get("quiz", []):
+                    fallback_questions.append({
+                        **q,
+                        "topic": topic.get("topicName", "Programming"),
+                    })
+
+            if not fallback_questions:
+                fallback_questions = [{
+                    "id": "fallback-1",
+                    "type": "mcq",
+                    "question": "Which keyword defines a function in Python?",
+                    "options": ["func", "def", "function", "define"],
+                    "correctAnswer": "def",
+                    "correctIdx": 1,
+                    "difficulty": "Beginner",
+                    "topic": "Python",
+                    "explanation": "Python functions are declared with the def keyword.",
+                    "points": 10,
+                }]
+
+            expanded_questions = []
+            idx = 0
+            while len(expanded_questions) < test_request.total_questions:
+                src = fallback_questions[idx % len(fallback_questions)]
+                q_type = _normalize_mock_type(src.get("type"), idx)
+                options = src.get("options") or []
+                correct_idx = src.get("correctIdx")
+                correct_answer = src.get("correctAnswer")
+                if isinstance(correct_answer, int) and options:
+                    try:
+                        correct_answer = options[correct_answer]
+                    except Exception:
+                        correct_answer = ""
+
+                expanded_questions.append({
+                    "id": f"mq-{idx + 1}",
+                    "type": q_type,
+                    "question": src.get("question", ""),
+                    "options": options,
+                    "correctAnswer": str(correct_answer or ""),
+                    "correctIdx": correct_idx if isinstance(correct_idx, int) else None,
+                    "difficulty": src.get("difficulty", "Intermediate"),
+                    "topic": src.get("topic", "Programming"),
+                    "explanation": src.get("explanation", ""),
+                    "points": src.get("points", 10 if q_type != "written" else 15),
+                })
+                idx += 1
             
             mock_test = {
                 "metadata": {
                     "title": "Programming Mock Test",
-                    "totalQuestions": len(fallback_questions),
+                    "totalQuestions": test_request.total_questions,
                     "estimatedTime": "30 minutes",
                     "topics": test_request.topics
                 },
-                "questions": fallback_questions[:test_request.total_questions]
+                "questions": expanded_questions
             }
+
+        # Normalize response shape and enforce requested length/types.
+        normalized = []
+        for i, q in enumerate(mock_test.get("questions", [])[: test_request.total_questions]):
+            q_type = _normalize_mock_type(q.get("type"), i)
+            options = q.get("options") or []
+            correct_answer = q.get("correctAnswer")
+            if isinstance(correct_answer, int) and options:
+                try:
+                    correct_answer = options[correct_answer]
+                except Exception:
+                    correct_answer = ""
+            normalized.append({
+                **q,
+                "id": q.get("id", f"mq-{i + 1}"),
+                "type": q_type,
+                "correctAnswer": str(correct_answer or ""),
+                "points": q.get("points", 10 if q_type != "written" else 15),
+            })
+
+        while normalized and len(normalized) < test_request.total_questions:
+            src = normalized[len(normalized) % len(normalized)]
+            normalized.append({ **src, "id": f"mq-{len(normalized) + 1}" })
+
+        mock_test["questions"] = normalized[: test_request.total_questions]
+        mock_test.setdefault("metadata", {})
+        mock_test["metadata"]["totalQuestions"] = len(mock_test["questions"])
         
         return SuccessResponse(
             success=True,
@@ -264,8 +362,8 @@ async def get_performance_analysis(current_user: dict = Depends(get_current_user
             ]
         }
         
-        # Get AI analysis
-        analysis = await openrouter_service.analyze_learning_progress(user_learning_data)
+        # Get AI analysis using Gemini
+        analysis = await adaptive_engine_service.analyze_learning_progress(user_learning_data)
         
         return SuccessResponse(
             success=True,

@@ -1,17 +1,25 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { topicsAPI, feedbackAPI } from '../services/api';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { Navbar } from '../components/layout/Navbar';
 import { Sidebar } from '../components/layout/Sidebar';
 import { MobileDrawer } from '../components/layout/MobileDrawer';
 import { VideoTrackerUI } from '../components/learning/VideoTrackerUI';
 import { ConfidenceSlider } from '../components/learning/ConfidenceSlider';
+import { FlowchartExplanation } from '../components/learning/FlowchartExplanation';
+import type { FlowchartNode } from '../components/learning/FlowchartExplanation';
 import { GradientButton } from '../components/ui/GradientButton';
 import { GlassCard } from '../components/ui/GlassCard';
 import { Link } from 'react-router-dom';
-import { ArrowRight, BookOpen, FileText, StickyNote, CheckCircle2, Eye, Lightbulb, Workflow, Sparkles } from 'lucide-react';
+import { ArrowRight, ArrowLeft, BookOpen, FileText, StickyNote, CheckCircle2, Eye, Lightbulb, Workflow, Sparkles, Loader2, Timer, Brain, Bot } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useUnderstanding } from '../context/UnderstandingContext';
 import { useNotifications } from '../context/NotificationContext';
+import { useLearningTimer } from '../context/LearningTimerContext';
+import { useUserPreferences } from '../context/UserPreferencesContext';
+import { LANGUAGES } from '../hooks/useTranslation';
+import { sanitizeMojibakeText } from '../lib/text';
 
 // ─── 4 Explanation Types — The Core Feature ──────────────────────────
 type ExplanationType = 'simplified' | 'logical' | 'visual' | 'analogy';
@@ -23,85 +31,6 @@ interface ExplanationContent {
     codeExample?: string;
 }
 
-const explanationData: Record<ExplanationType, ExplanationContent> = {
-    simplified: {
-        title: '🟢 Simplified Explanation',
-        highlight: 'In plain, everyday language — no jargon.',
-        body: [
-            'A **generator** is like a special function that can pause and resume.',
-            'Instead of computing everything at once and returning a big list, it gives you **one item at a time** whenever you ask for the next one.',
-            'You create one using the **yield** keyword instead of return.',
-            'Think of it as a **lazy worker** — it only does the next bit of work when you tell it to.',
-            'This saves memory because you don\'t have to hold everything in memory at once.',
-        ],
-        codeExample: `# Simple generator\ndef count_up(n):\n    i = 1\n    while i <= n:\n        yield i    # pauses here, gives you i\n        i += 1\n\n# Use it:\nfor num in count_up(5):\n    print(num)  # prints 1, 2, 3, 4, 5`,
-    },
-    logical: {
-        title: '🔵 Logical / Step-by-Step Explanation',
-        highlight: 'A precise, structured walkthrough of how it works internally.',
-        body: [
-            '**Step 1:** When Python sees `yield` in a function, it marks that function as a generator function.',
-            '**Step 2:** Calling the function does NOT execute the body. Instead, it returns a **generator object** (an iterator).',
-            '**Step 3:** Each call to `next()` on the generator executes the function body up to the next `yield` statement.',
-            '**Step 4:** The `yield` expression returns the value AND **suspends** the function\'s state (local variables, instruction pointer).',
-            '**Step 5:** On the next `next()` call, execution **resumes** right after the `yield`, with all local state intact.',
-            '**Step 6:** When the function body ends (or hits `return`), a `StopIteration` exception is raised, signaling exhaustion.',
-        ],
-        codeExample: `def gen():\n    print("A")\n    yield 1\n    print("B")\n    yield 2\n    print("C")\n\ng = gen()         # Nothing printed yet\nprint(next(g))    # Prints "A", returns 1\nprint(next(g))    # Prints "B", returns 2\nprint(next(g))    # Prints "C", raises StopIteration`,
-    },
-    visual: {
-        title: '🟣 Visual / Diagram Explanation',
-        highlight: 'See how data flows through the generator, step by step.',
-        body: [
-            '**Execution Flow Diagram:**',
-            '',
-            '┌─── call gen() ───────────────────────────┐',
-            '│  Creates generator object (no execution)  │',
-            '└────────────────────────────────────────────┘',
-            '         │',
-            '         ▼  next()',
-            '┌────────────────────────────┐',
-            '│  Execute until yield 1     │ ──→ returns 1',
-            '│  ⏸️  PAUSED (state saved)   │',
-            '└────────────────────────────┘',
-            '         │',
-            '         ▼  next()',
-            '┌────────────────────────────┐',
-            '│  Resume → execute → yield 2│ ──→ returns 2',
-            '│  ⏸️  PAUSED (state saved)   │',
-            '└────────────────────────────┘',
-            '         │',
-            '         ▼  next()',
-            '┌────────────────────────────┐',
-            '│  Resume → function ends    │ ──→ StopIteration',
-            '│  ❌  EXHAUSTED             │',
-            '└────────────────────────────┘',
-            '',
-            '**Memory comparison:**',
-            '  List:      [██████████████████████] All in RAM',
-            '  Generator: [██]→[██]→[██]→...      One at a time',
-        ],
-    },
-    analogy: {
-        title: '🟡 Analogy-Based Explanation',
-        highlight: 'Understand through real-world comparisons.',
-        body: [
-            '**🏭 The Factory Analogy:**',
-            'Imagine a factory with a conveyor belt. A **regular function** is like a factory that builds ALL the products, boxes them up, and delivers the entire shipment at once. You need a huge warehouse to store everything.',
-            '',
-            'A **generator** is like a factory with a **just-in-time** conveyor belt. It builds ONE product at a time and hands it to you directly. No warehouse needed!',
-            '',
-            '**📖 The Bookmark Analogy:**',
-            'Reading a book with `return` is like reading the entire book, writing a summary, and handing it over. Reading with `yield` is like using a **bookmark** — you read one chapter, place the bookmark, and come back later to continue exactly where you left off.',
-            '',
-            '**🎰 The Vending Machine Analogy:**',
-            'A generator is like a vending machine. It has many items inside, but it gives you **one item per button press**. It remembers which slot is next. You don\'t get all the snacks dumped on you at once!',
-            '',
-            '**Key takeaway:** Generators = lazy, on-demand, memory-efficient sequences.',
-        ],
-    },
-};
-
 const explanationMeta: { id: ExplanationType; label: string; icon: typeof Eye; color: string; bg: string; border: string; desc: string }[] = [
     { id: 'simplified', label: 'Simplified', icon: BookOpen, color: 'text-emerald-600', bg: 'bg-candy-mint/40', border: 'border-emerald-200', desc: 'Plain language, no jargon' },
     { id: 'logical', label: 'Logical', icon: Workflow, color: 'text-pink-600', bg: 'bg-candy-pink/40', border: 'border-pink-200', desc: 'Step-by-step breakdown' },
@@ -109,7 +38,96 @@ const explanationMeta: { id: ExplanationType; label: string; icon: typeof Eye; c
     { id: 'analogy', label: 'Analogy', icon: Lightbulb, color: 'text-orange-600', bg: 'bg-candy-peach/40', border: 'border-orange-200', desc: 'Real-world comparisons' },
 ];
 
+const EMPTY_EXPLANATION: ExplanationContent = {
+    title: '',
+    body: [],
+    highlight: '',
+};
+
+const sanitizeExplanationText = (text: string) => {
+    return sanitizeMojibakeText(text);
+};
+
+const buildFlowchartFromBody = (body: string[]): FlowchartNode[] => {
+    const cleaned = body
+        .map(sanitizeExplanationText)
+        .filter(Boolean)
+        .filter(line => !line.toLowerCase().startsWith('visualized flow'));
+
+    if (cleaned.length === 0) return [];
+
+    const stepLines = cleaned.filter(line => /^step\s*\d+/i.test(line));
+    const source = (stepLines.length > 0 ? stepLines : cleaned).slice(0, 8);
+
+    return source.map((line, idx) => {
+        const text = line.replace(/^step\s*\d+\s*[:.-]?\s*/i, '').trim();
+        const isDecision = /\?|\b(check|if|whether|more items|decision)\b/i.test(text);
+        const isEnd = /\b(stop|exit|done|complete|end|stopiteration)\b/i.test(text) || idx === source.length - 1;
+        const type: FlowchartNode['type'] = idx === 0 ? 'start' : isEnd ? 'end' : isDecision ? 'decision' : 'process';
+
+        return {
+            id: `auto-flow-${idx + 1}`,
+            type,
+            label: text.length > 60 ? `${text.slice(0, 60)}...` : text,
+            detail: text,
+        };
+    });
+};
+
+const buildAnalogySteps = (body: string[]): string[] => {
+    const fullText = sanitizeExplanationText(body.join(' '));
+    if (!fullText) return [];
+
+    return fullText
+        .split(/(?<=[.!?])\s+/)
+        .map(part => part.trim())
+        .filter(part => part.length > 8);
+};
+
+const buildLogicalSteps = (body: string[]): string[] => {
+    const cleaned = body.map(sanitizeExplanationText).filter(Boolean);
+    if (cleaned.length === 0) return [];
+
+    const explicitSteps = cleaned
+        .filter(line => /^step\s*\d+/i.test(line))
+        .map(line => line.replace(/^step\s*\d+\s*[:.-]?\s*/i, '').trim());
+
+    if (explicitSteps.length > 0) return explicitSteps;
+
+    return sanitizeExplanationText(cleaned.join(' '))
+        .split(/(?<=[.!?])\s+/)
+        .map(part => part.trim())
+        .filter(part => part.length > 10)
+        .slice(0, 8);
+};
+
+const buildAnalogyComparisons = (body: string[]): Array<{ concept: string; realWorld: string }> => {
+    const fullText = sanitizeExplanationText(body.join(' '));
+    if (!fullText) return [];
+
+    const parts = fullText
+        .split(/(?<=[.!?])\s+/)
+        .map(p => p.trim())
+        .filter(Boolean);
+
+    const comparisons = parts.flatMap((sentence) => {
+        const match = sentence.match(/(.+?)\s+is\s+like\s+(.+)/i);
+        if (!match) return [];
+        return [{ concept: match[1].trim(), realWorld: match[2].trim() }];
+    });
+
+    if (comparisons.length > 0) return comparisons.slice(0, 8);
+
+    return parts.slice(0, 6).map((sentence, idx) => ({
+        concept: `Concept ${idx + 1}`,
+        realWorld: sentence,
+    }));
+};
+
 export const TopicView = () => {
+    const [searchParams] = useSearchParams();
+    const navigate = useNavigate();
+    const topicId = searchParams.get('id') || '';
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [videoProgress, setVideoProgress] = useState(0);
     const [videoEnded, setVideoEnded] = useState(false);
@@ -119,55 +137,194 @@ export const TopicView = () => {
     const [confidence, setConfidence] = useState(40);
     const { saveUnderstanding } = useUnderstanding();
     const { addNotification } = useNotifications();
+    const { startTracking, stopTracking, elapsedTime, getInsight } = useLearningTimer();
+    const { preferences } = useUserPreferences();
 
-    const TOPIC_ID = 6; // Current topic = "Advanced Iterators & Generators"
-    const TOPIC_TITLE = 'Advanced Iterators & Generators';
+
+    // API-loaded state
+    const [topicTitle, setTopicTitle] = useState('');
+    const [topicLanguage, setTopicLanguage] = useState('');
+    const [topicOverview, setTopicOverview] = useState('');
+    const [videoUrl, setVideoUrl] = useState('');
+    const [topicNotes, setTopicNotes] = useState('');
+    const [translatedNotes, setTranslatedNotes] = useState('');
+    const [notesLang, setNotesLang] = useState(preferences.language || 'en');
+    const [isTranslatingNotes, setIsTranslatingNotes] = useState(false);
+
+
+    const [explanations, setExplanations] = useState<Record<ExplanationType, ExplanationContent>>({
+        simplified: EMPTY_EXPLANATION,
+        logical: EMPTY_EXPLANATION,
+        visual: EMPTY_EXPLANATION,
+        analogy: EMPTY_EXPLANATION,
+    });
+    const [loadingTopic, setLoadingTopic] = useState(true);
+    const [flowchartNodes, setFlowchartNodes] = useState<FlowchartNode[] | null>(null);
+    const [hasStudyMaterial, setHasStudyMaterial] = useState(false);
+
+    // Fetch topic details
+    useEffect(() => {
+        if (!topicId) { setLoadingTopic(false); return; }
+        setLoadingTopic(true);
+        topicsAPI.getById(topicId)
+            .then(res => {
+                const topic = res.data?.data?.topic;
+                if (topic) {
+                    setTopicTitle(topic.topicName || '');
+                    setTopicLanguage(topic.language || '');
+                    setTopicOverview(topic.overview || '');
+                    setIsCompleted(topic.status === 'completed');
+
+                    // Start learning timer
+                    startTracking(topicId, topic.topicName || topicId);
+                    const videos = topic.recommendedVideos || [];
+                    if (videos.length > 0 && videos[0].youtubeId) {
+                        setVideoUrl(`https://www.youtube.com/watch?v=${videos[0].youtubeId}`);
+                    }
+                    const existingExps = topic.explanations || [];
+                    if (existingExps.length > 0) {
+                        const parsed: Partial<Record<ExplanationType, ExplanationContent>> = {};
+                        for (const exp of existingExps) {
+                            const style = exp.style as ExplanationType;
+                            if (['simplified', 'logical', 'visual', 'analogy'].includes(style)) {
+                                const rawContent = exp.content || '';
+
+                                // Detect flowchart JSON in visual explanation
+                                if (style === 'visual' && typeof rawContent === 'string' && rawContent.startsWith('[FLOWCHART]')) {
+                                    try {
+                                        const json = JSON.parse(rawContent.replace('[FLOWCHART]', ''));
+                                        if (json.nodes && Array.isArray(json.nodes)) {
+                                            setFlowchartNodes(json.nodes as FlowchartNode[]);
+                                        }
+                                    } catch {
+                                        // Not valid JSON — will fall back to text rendering
+                                    }
+                                    parsed[style] = {
+                                        title: sanitizeExplanationText(exp.title || 'Visual Flowchart'),
+                                        body: [], // flowchart takes over rendering
+                                        highlight: '',
+                                    };
+                                } else {
+                                    parsed[style] = {
+                                        title: sanitizeExplanationText(exp.title || `${style.charAt(0).toUpperCase() + style.slice(1)} Explanation`),
+                                        body: typeof rawContent === 'string' ? rawContent.split('\n').filter(Boolean) : [],
+                                        highlight: '',
+                                        codeExample: exp.codeExample,
+                                    };
+                                }
+                            }
+                        }
+                        setExplanations(prev => ({ ...prev, ...parsed }));
+                    }
+                    setTopicNotes(topic.overview || '');
+
+                    // Check if study material exists
+                    if (topic.studyMaterial && Object.keys(topic.studyMaterial).length > 0) {
+                        setHasStudyMaterial(true);
+                    }
+                }
+            })
+            .catch(() => {})
+            .finally(() => setLoadingTopic(false));
+    }, [topicId]);
+
+
+
+    // Auto-translate notes if saved language is not English
+    useEffect(() => {
+        if (notesLang !== 'en' && topicNotes && !translatedNotes) {
+            setIsTranslatingNotes(true);
+            fetch(
+                `https://api.mymemory.translated.net/get?q=${encodeURIComponent(topicNotes.slice(0, 500))}&langpair=en|${notesLang}`
+            )
+                .then(r => r.json())
+                .then(data => {
+                    if (data.responseData?.translatedText) {
+                        setTranslatedNotes(data.responseData.translatedText);
+                    }
+                })
+                .catch(() => {})
+                .finally(() => setIsTranslatingNotes(false));
+        }
+    }, [topicNotes, notesLang]);
+
+    // Stop tracking when leaving topic
+    useEffect(() => {
+        return () => { stopTracking(); };
+    }, [topicId]);
+
+    const insight = getInsight();
+    const formatElapsed = (s: number) => {
+        const m = Math.floor(s / 60);
+        const sec = s % 60;
+        return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+    };
 
     const handleSaveUnderstanding = (value: number, label: string) => {
-        saveUnderstanding({ topicId: TOPIC_ID, topicTitle: TOPIC_TITLE, value, label });
+        saveUnderstanding({ topicId: topicId || '', topicTitle, value, label });
+        if (topicId) {
+            const rating = Math.min(5, Math.max(1, Math.ceil(value / 20)));
+            feedbackAPI.submit({ topic_id: topicId, rating, comment: label }).catch(() => {});
+        }
     };
 
     const handleComplete = () => {
-        if (hasWatchedFull) {
+        if (hasWatchedFull && topicId) {
+            topicsAPI.updateStatus(topicId, { status: 'completed', score: 85 }).catch(() => {});
             setIsCompleted(true);
             addNotification({
                 type: 'congrats',
                 title: 'Congratulations! Topic completed 🎉',
-                message: `Great job finishing "${TOPIC_TITLE}"! Keep up the awesome work.`,
-                topicId: TOPIC_ID,
+                message: `Great job finishing "${topicTitle}"! Keep up the awesome work.`,
+                topicId: topicId,
             });
         }
     };
 
+
+
     const hasWatchedFull = videoProgress >= 95 || videoEnded;
-    const currentExplanation = explanationData[selectedExplanation];
+    const currentExplanation = explanations[selectedExplanation];
     const currentMeta = explanationMeta.find(m => m.id === selectedExplanation)!;
+    const normalizedBody = currentExplanation.body.map(sanitizeExplanationText).filter(Boolean);
+    const computedFlowNodes = selectedExplanation === 'visual'
+        ? (flowchartNodes && flowchartNodes.length > 0 ? flowchartNodes : buildFlowchartFromBody(normalizedBody))
+        : [];
+    const logicalSteps = selectedExplanation === 'logical' ? buildLogicalSteps(normalizedBody) : [];
+    const analogySteps = selectedExplanation === 'analogy' ? buildAnalogySteps(normalizedBody) : [];
+    const analogyComparisons = selectedExplanation === 'analogy' ? buildAnalogyComparisons(normalizedBody) : [];
 
-    const sampleNotes = `## Python Generators & Iterators
+    if (loadingTopic) {
+        return (
+            <>
+                <Navbar onMenuClick={() => setDrawerOpen(true)} />
+                <Sidebar />
+                <MobileDrawer isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
+                <PageWrapper className="lg:pl-64">
+                    <div className="flex items-center justify-center min-h-[50vh]">
+                        <Loader2 className="w-8 h-8 text-brand animate-spin" />
+                    </div>
+                </PageWrapper>
+            </>
+        );
+    }
 
-**Key Concepts:**
-• A generator function uses the \`yield\` keyword instead of \`return\`
-• Generators produce items lazily — one at a time, on demand
-• They maintain internal state between calls to \`next()\`
-
-**Example:**
-\`\`\`python
-def countdown(n):
-    while n > 0:
-        yield n
-        n -= 1
-
-for num in countdown(5):
-    print(num)
-\`\`\`
-
-**Benefits:**
-- Memory efficient for large datasets
-- Can represent infinite sequences
-- Composable with other itertools
-
-**When to use:**
-Use generators when processing large files, streaming data, or building data pipelines.`;
+    if (!topicId) {
+        return (
+            <>
+                <Navbar onMenuClick={() => setDrawerOpen(true)} />
+                <Sidebar />
+                <MobileDrawer isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
+                <PageWrapper className="lg:pl-64">
+                    <div className="flex flex-col items-center justify-center min-h-[50vh] text-gray-400 gap-4">
+                        <BookOpen className="w-12 h-12 opacity-40" />
+                        <p className="text-lg font-medium">No topic selected</p>
+                        <Link to="/videos"><GradientButton>Go to Topics</GradientButton></Link>
+                    </div>
+                </PageWrapper>
+            </>
+        );
+    }
 
     return (
         <>
@@ -180,11 +337,56 @@ Use generators when processing large files, streaming data, or building data pip
 
                     {/* Header */}
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                        <button
+                            onClick={() => navigate('/videos')}
+                            className="mb-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
+                        >
+                            <ArrowLeft className="w-4 h-4" /> Back to Topics
+                        </button>
                         <div className="inline-flex items-center gap-2 px-3 py-1 bg-brand/10 border border-brand/20 rounded-full text-brand text-xs font-bold mb-4">
-                            <BookOpen className="w-3.5 h-3.5" /> Python Basics
+                            <BookOpen className="w-3.5 h-3.5" /> {topicLanguage || 'Topic'}
                         </div>
-                        <h1 className="text-3xl md:text-4xl font-bold text-gray-800 mb-2">Advanced Iterators & Generators</h1>
-                        <p className="text-lg text-gray-500">Master memory-efficient looping structures using Python generators and the yield keyword.</p>
+                        <h1 className="text-3xl md:text-4xl font-bold text-gray-800 mb-2">{topicTitle}</h1>
+                        <p className="text-lg text-gray-500">{sanitizeExplanationText(topicOverview)}</p>
+                    </motion.div>
+
+                    {/* Learning Content */}
+                    <motion.div
+                        key="learning-content-main"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4, delay: 0.1, ease: 'easeOut' }}
+                    >
+
+                    {/* Learning Timer & Mindset Insight */}
+                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+                        <GlassCard className="p-4">
+                            <div className="flex items-center justify-between flex-wrap gap-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
+                                        <Timer className="w-5 h-5 text-indigo-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500 font-medium">Time on this topic</p>
+                                        <p className="text-lg font-bold text-gray-800 font-mono">{formatElapsed(elapsedTime)}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                                        <Brain className="w-5 h-5 text-purple-600" />
+                                    </div>
+                                    <div className="max-w-sm">
+                                        <p className="text-xs text-gray-500 font-medium">Learning Pace: <span className="capitalize font-bold">{insight.pace}</span></p>
+                                        <p className="text-xs text-gray-600">{insight.message}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            {insight.recommendation && (
+                                <p className="text-xs text-brand mt-2 bg-brand/5 px-3 py-1.5 rounded-lg">
+                                    💡 {insight.recommendation}
+                                </p>
+                            )}
+                        </GlassCard>
                     </motion.div>
 
                     {/* ═══════════════════════════════════════════════════════════════
@@ -257,8 +459,7 @@ Use generators when processing large files, streaming data, or building data pip
                                     <div className={`px-6 py-4 ${currentMeta.bg} border-b ${currentMeta.border} flex items-center gap-3`}>
                                         <currentMeta.icon className={`w-5 h-5 ${currentMeta.color}`} />
                                         <div>
-                                            <h3 className="font-bold text-gray-800 text-base">{currentExplanation.title}</h3>
-                                            <p className="text-xs text-gray-500">{currentExplanation.highlight}</p>
+                                            <h3 className="font-bold text-gray-800 text-base">{currentExplanation.title || currentMeta.label}</h3>
                                         </div>
                                         <div className="ml-auto">
                                             <Sparkles className={`w-4 h-4 ${currentMeta.color} opacity-60`} />
@@ -267,38 +468,85 @@ Use generators when processing large files, streaming data, or building data pip
 
                                     {/* Body */}
                                     <div className="p-6 space-y-3">
-                                        {currentExplanation.body.map((line, i) => {
-                                            if (line === '') return <div key={i} className="h-2" />;
-                                            if (line.startsWith('  ') || line.startsWith('┌') || line.startsWith('│') || line.startsWith('└') || line.startsWith('         ')) {
-                                                return (
-                                                    <pre key={i} className="text-xs font-mono text-gray-600 leading-relaxed whitespace-pre">
-                                                        {line}
-                                                    </pre>
-                                                );
-                                            }
-                                            return (
-                                                <p key={i} className="text-sm text-gray-700 leading-relaxed"
-                                                   dangerouslySetInnerHTML={{
-                                                       __html: line
-                                                           .replace(/\*\*(.*?)\*\*/g, '<strong class="text-gray-800">$1</strong>')
-                                                           .replace(/`(.*?)`/g, '<code class="px-1.5 py-0.5 bg-gray-100 rounded text-brand text-xs font-mono">$1</code>')
-                                                   }}
-                                                />
-                                            );
-                                        })}
+                                        {/* Visual tab: always render as flowchart */}
+                                        {selectedExplanation === 'visual' && computedFlowNodes.length > 0 ? (
+                                            <FlowchartExplanation
+                                                nodes={computedFlowNodes}
+                                                title="Follow the flow to understand the concept step by step"
+                                            />
+                                        ) : selectedExplanation === 'logical' && logicalSteps.length > 0 ? (
+                                            <div className="space-y-3">
+                                                {logicalSteps.map((step, i) => (
+                                                    <div key={`${step}-${i}`} className="flex items-start gap-3 rounded-xl border border-pink-200 bg-pink-50/40 p-3">
+                                                        <div className="w-6 h-6 rounded-full bg-pink-100 text-pink-700 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                                                            {i + 1}
+                                                        </div>
+                                                        <p className="text-sm text-gray-700 leading-relaxed">{step}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : selectedExplanation === 'analogy' && analogySteps.length > 0 ? (
+                                            <div className="space-y-3">
+                                                {analogyComparisons.length > 0 ? analogyComparisons.map((row, i) => (
+                                                    <div key={`${row.concept}-${i}`} className="rounded-xl border border-orange-200 bg-orange-50/40 p-3">
+                                                        <div className="flex items-start gap-2 text-sm">
+                                                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-100 text-orange-700">Concept</span>
+                                                            <p className="text-gray-700 leading-relaxed">{row.concept}</p>
+                                                        </div>
+                                                        <div className="flex items-start gap-2 text-sm mt-2">
+                                                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-100 text-orange-700">Real World</span>
+                                                            <p className="text-gray-700 leading-relaxed">{row.realWorld}</p>
+                                                        </div>
+                                                    </div>
+                                                )) : analogySteps.map((step, i) => (
+                                                    <div key={`${step}-${i}`} className="flex items-start gap-3 rounded-xl border border-orange-200 bg-orange-50/40 p-3">
+                                                        <div className="w-6 h-6 rounded-full bg-orange-100 text-orange-700 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                                                            {i + 1}
+                                                        </div>
+                                                        <p className="text-sm text-gray-700 leading-relaxed">{step}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : currentExplanation.body.length > 0 ? (
+                                            <>
+                                                {normalizedBody.map((line, i) => {
+                                                    if (line === '') return <div key={i} className="h-2" />;
+                                                    if (line.startsWith('  ') || line.startsWith('┌') || line.startsWith('│') || line.startsWith('└') || line.startsWith('         ')) {
+                                                        return (
+                                                            <pre key={i} className="text-xs font-mono text-gray-600 leading-relaxed whitespace-pre">
+                                                                {line}
+                                                            </pre>
+                                                        );
+                                                    }
+                                                    return (
+                                                        <p key={i} className="text-sm text-gray-700 leading-relaxed"
+                                                           dangerouslySetInnerHTML={{
+                                                               __html: line
+                                                                   .replace(/\*\*(.*?)\*\*/g, '<strong class="text-gray-800">$1</strong>')
+                                                                   .replace(/`(.*?)`/g, '<code class="px-1.5 py-0.5 bg-gray-100 rounded text-brand text-xs font-mono">$1</code>')
+                                                           }}
+                                                        />
+                                                    );
+                                                })}
 
-                                        {/* Code example if present */}
-                                        {currentExplanation.codeExample && (
-                                            <div className="mt-4 rounded-xl bg-gray-900 text-gray-100 p-4 overflow-x-auto">
-                                                <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-700">
-                                                    <span className="w-3 h-3 rounded-full bg-red-400" />
-                                                    <span className="w-3 h-3 rounded-full bg-yellow-400" />
-                                                    <span className="w-3 h-3 rounded-full bg-green-400" />
-                                                    <span className="ml-2 text-xs text-gray-400 font-mono">example.py</span>
-                                                </div>
-                                                <pre className="text-sm font-mono leading-relaxed whitespace-pre">
-                                                    {currentExplanation.codeExample}
-                                                </pre>
+                                                {/* Code example if present */}
+                                                {currentExplanation.codeExample && (
+                                                    <div className="mt-4 rounded-xl bg-gray-900 text-gray-100 p-4 overflow-x-auto">
+                                                        <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-700">
+                                                            <span className="w-3 h-3 rounded-full bg-red-400" />
+                                                            <span className="w-3 h-3 rounded-full bg-yellow-400" />
+                                                            <span className="w-3 h-3 rounded-full bg-green-400" />
+                                                            <span className="ml-2 text-xs text-gray-400 font-mono">example.py</span>
+                                                        </div>
+                                                        <pre className="text-sm font-mono leading-relaxed whitespace-pre">
+                                                            {currentExplanation.codeExample}
+                                                        </pre>
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <div className="text-center py-8 text-gray-400">
+                                                <p className="text-sm">No explanation available for this style yet.</p>
                                             </div>
                                         )}
                                     </div>
@@ -310,8 +558,8 @@ Use generators when processing large files, streaming data, or building data pip
                         <ConfidenceSlider
                             value={confidence}
                             onChange={setConfidence}
-                            topicId={TOPIC_ID}
-                            topicTitle={TOPIC_TITLE}
+                            topicId={topicId}
+                            topicTitle={topicTitle}
                             onSave={handleSaveUnderstanding}
                         />
                     </motion.div>
@@ -322,21 +570,44 @@ Use generators when processing large files, streaming data, or building data pip
                             <span className="w-8 h-8 bg-brand/10 rounded-lg flex items-center justify-center text-brand text-sm font-bold">2</span>
                             Watch the Video
                         </h2>
-                        <VideoTrackerUI
-                            url="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-                            onProgress={(played) => setVideoProgress(played)}
-                            onEnded={() => setVideoEnded(true)}
-                        />
-                        {/* Video progress indicator */}
-                        <div className="flex items-center gap-3">
-                            <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full bg-brand rounded-full transition-all duration-300"
-                                    style={{ width: `${Math.min(videoProgress, 100)}%` }}
+                        {videoUrl ? (
+                            <>
+                                <VideoTrackerUI
+                                    url={videoUrl}
+                                    onProgress={(played) => setVideoProgress(played)}
+                                    onEnded={() => setVideoEnded(true)}
                                 />
-                            </div>
-                            <span className="text-sm font-medium text-gray-500">{Math.round(videoProgress)}% watched</span>
-                        </div>
+                                {/* Video progress indicator */}
+                                <div className="flex items-center gap-3">
+                                    <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-brand rounded-full transition-all duration-300"
+                                            style={{ width: `${Math.min(videoProgress, 100)}%` }}
+                                        />
+                                    </div>
+                                    <span className="text-sm font-medium text-gray-500">{Math.round(videoProgress)}% watched</span>
+                                </div>
+                            </>
+                        ) : (
+                            <GlassCard className="p-8 flex flex-col items-center justify-center gap-4 text-center">
+                                <div className="w-16 h-16 rounded-2xl bg-red-50 flex items-center justify-center">
+                                    <svg className="w-8 h-8 text-red-500" viewBox="0 0 24 24" fill="currentColor"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0C.488 3.45.029 5.804 0 12c.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0C23.512 20.55 23.971 18.196 24 12c-.029-6.185-.484-8.549-4.385-8.816zM9 16V8l8 4-8 4z"/></svg>
+                                </div>
+                                <div>
+                                    <p className="text-sm font-semibold text-gray-700">No video available for this topic yet</p>
+                                    <p className="text-xs text-gray-400 mt-1">Search YouTube for a relevant tutorial</p>
+                                </div>
+                                <a
+                                    href={`https://www.youtube.com/results?search_query=${encodeURIComponent(topicTitle + ' tutorial')}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 transition-all shadow-md"
+                                >
+                                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0C.488 3.45.029 5.804 0 12c.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0C23.512 20.55 23.971 18.196 24 12c-.029-6.185-.484-8.549-4.385-8.816zM9 16V8l8 4-8 4z"/></svg>
+                                    Search on YouTube
+                                </a>
+                            </GlassCard>
+                        )}
                     </motion.div>
 
                     {/* ═══ SECTION 3: Study Materials (PDF + Notes) ═══ */}
@@ -376,14 +647,38 @@ Use generators when processing large files, streaming data, or building data pip
                             <GlassCard className={`p-0 overflow-hidden ${activeTab !== 'pdf' ? 'hidden lg:block' : ''}`}>
                                 <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex items-center gap-2">
                                     <FileText className="w-4 h-4 text-brand" />
-                                    <span className="text-sm font-semibold text-gray-700">Learning PDF</span>
-                                    <span className="ml-auto text-xs text-gray-400">View only</span>
+                                    <span className="text-sm font-semibold text-gray-700 truncate">Study Material</span>
                                 </div>
-                                <iframe
-                                    src="https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf#toolbar=0&navpanes=0&scrollbar=1"
-                                    className="w-full h-[500px] border-0"
-                                    title="Learning PDF"
-                                />
+                                {hasStudyMaterial ? (
+                                    <div className="w-full p-6 flex flex-col items-center justify-center gap-5" style={{ minHeight: '360px' }}>
+                                        <div className="w-24 h-28 bg-white rounded-xl border-2 border-brand/20 shadow-sm flex flex-col items-center justify-center relative">
+                                            <div className="absolute -top-2 -right-2 w-7 h-5 bg-brand rounded-md flex items-center justify-center">
+                                                <span className="text-[8px] font-bold text-white tracking-wider">VIEW</span>
+                                            </div>
+                                            <FileText className="w-10 h-10 text-brand/60" />
+                                            <div className="w-12 h-[2px] bg-gray-200 mt-1.5 rounded" />
+                                            <div className="w-10 h-[2px] bg-gray-200 mt-1 rounded" />
+                                            <div className="w-8 h-[2px] bg-gray-200 mt-1 rounded" />
+                                        </div>
+                                        <div className="text-center max-w-[280px]">
+                                            <h3 className="text-base font-bold text-gray-800 leading-snug">{topicTitle} — Study Material</h3>
+                                            <p className="text-xs text-gray-400 mt-1.5">Opens in a full-screen reading view</p>
+                                        </div>
+                                        <Link
+                                            to={`/study-material?topicId=${encodeURIComponent(topicId)}`}
+                                            className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white bg-brand hover:bg-brand/90 transition-all shadow-md hover:shadow-lg active:scale-95"
+                                        >
+                                            <Eye className="w-4 h-4" /> View Study Material
+                                        </Link>
+                                    </div>
+                                ) : (
+                                    <div className="w-full h-[300px] flex items-center justify-center text-gray-400">
+                                        <div className="text-center">
+                                            <FileText className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                                            <p className="text-sm">No study material available yet</p>
+                                        </div>
+                                    </div>
+                                )}
                             </GlassCard>
 
                             {/* Notes Viewer */}
@@ -391,18 +686,56 @@ Use generators when processing large files, streaming data, or building data pip
                                 <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex items-center gap-2">
                                     <StickyNote className="w-4 h-4 text-brand" />
                                     <span className="text-sm font-semibold text-gray-700">Topic Notes</span>
-                                    <span className="ml-auto text-xs text-gray-400">View only</span>
+                                    <select
+                                        value={notesLang}
+                                        onChange={async (e) => {
+                                            const lang = e.target.value;
+                                            setNotesLang(lang);
+                                            if (lang === 'en') {
+                                                setTranslatedNotes('');
+                                                return;
+                                            }
+                                            if (!topicNotes) return;
+                                            setIsTranslatingNotes(true);
+                                            try {
+                                                const res = await fetch(
+                                                    `https://api.mymemory.translated.net/get?q=${encodeURIComponent(topicNotes.slice(0, 500))}&langpair=en|${lang}`
+                                                );
+                                                const data = await res.json();
+                                                if (data.responseData?.translatedText) {
+                                                    setTranslatedNotes(data.responseData.translatedText);
+                                                }
+                                            } catch { /* ignore */ }
+                                            setIsTranslatingNotes(false);
+                                        }}
+                                        className="ml-auto text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-brand/30"
+                                    >
+                                        {LANGUAGES.map(l => (
+                                            <option key={l.code} value={l.code}>{l.flag} {l.name}</option>
+                                        ))}
+                                    </select>
                                 </div>
                                 <div className="p-6 h-[500px] overflow-y-auto">
+                                    {isTranslatingNotes && (
+                                        <div className="flex items-center gap-2 text-xs text-blue-500 mb-3">
+                                            <Loader2 className="w-3 h-3 animate-spin" /> Translating notes...
+                                        </div>
+                                    )}
                                     <div className="prose prose-sm max-w-none text-gray-700">
-                                        {sampleNotes.split('\n').map((line, i) => {
-                                            if (line.startsWith('## ')) return <h2 key={i} className="text-xl font-bold text-gray-800 mb-3">{line.replace('## ', '')}</h2>;
-                                            if (line.startsWith('**') && line.endsWith('**')) return <p key={i} className="font-bold text-gray-800 mt-4 mb-2">{line.replace(/\*\*/g, '')}</p>;
-                                            if (line.startsWith('• ') || line.startsWith('- ')) return <p key={i} className="pl-4 py-0.5 text-gray-600">{line}</p>;
-                                            if (line.startsWith('```')) return <div key={i} className="my-1" />;
-                                            if (line.trim() === '') return <br key={i} />;
-                                            return <p key={i} className="text-gray-600 leading-relaxed">{line}</p>;
-                                        })}
+                                        {(() => {
+                                            const noteText = translatedNotes && notesLang !== 'en' ? translatedNotes : topicNotes;
+                                            return noteText ? noteText.split('\n').map((line: string, i: number) => {
+                                            const cleanLine = sanitizeExplanationText(line);
+                                            if (cleanLine.startsWith('## ')) return <h2 key={i} className="text-xl font-bold text-gray-800 mb-3">{cleanLine.replace('## ', '')}</h2>;
+                                            if (cleanLine.startsWith('**') && cleanLine.endsWith('**')) return <p key={i} className="font-bold text-gray-800 mt-4 mb-2">{cleanLine.replace(/\*\*/g, '')}</p>;
+                                            if (cleanLine.startsWith('• ') || cleanLine.startsWith('- ')) return <p key={i} className="pl-4 py-0.5 text-gray-600">{cleanLine}</p>;
+                                            if (cleanLine.startsWith('```')) return <div key={i} className="my-1" />;
+                                            if (cleanLine.trim() === '') return <br key={i} />;
+                                            return <p key={i} className="text-gray-600 leading-relaxed">{cleanLine}</p>;
+                                        }) : (
+                                            <p className="text-gray-400 text-center mt-8">No notes available for this topic.</p>
+                                        );
+                                        })()}
                                     </div>
                                 </div>
                             </GlassCard>
@@ -414,7 +747,7 @@ Use generators when processing large files, streaming data, or building data pip
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: 0.5 }}
-                        className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 pb-12 border-t border-pink-100"
+                        className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 pb-4 border-t border-pink-100"
                     >
                         {/* Complete Button */}
                         <div className="flex items-center gap-3">
@@ -440,12 +773,35 @@ Use generators when processing large files, streaming data, or building data pip
                         </div>
 
                         {/* Take Mock Test */}
-                        <Link to="/quiz">
+                        <Link to={`/mock-test?topicId=${topicId}&topic=${encodeURIComponent(topicTitle)}`}>
                             <GradientButton className="group text-lg px-8 py-4">
                                 Take Mock Test
                                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                             </GradientButton>
                         </Link>
+                    </motion.div>
+
+                    {/* ═══ SECTION 5: Navigation & AI Chat ═══ */}
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.6 }}
+                        className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-12"
+                    >
+                        {/* Go Back */}
+                        <Link to="/videos">
+                            <button className="flex items-center gap-2 px-5 py-3 rounded-xl font-medium text-sm bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
+                                <ArrowLeft className="w-4 h-4" /> Back to All Topics
+                            </button>
+                        </Link>
+
+                        {/* Ask AI Tutor About This Topic */}
+                        <Link to={`/chat?topic=${encodeURIComponent(topicTitle)}`}>
+                            <button className="flex items-center gap-2 px-5 py-3 rounded-xl font-medium text-sm bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 transition-colors">
+                                <Bot className="w-4 h-4" /> Ask AI Tutor About This Topic
+                            </button>
+                        </Link>
+                    </motion.div>
                     </motion.div>
 
                 </div>

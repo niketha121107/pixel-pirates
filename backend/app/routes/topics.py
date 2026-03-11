@@ -18,17 +18,17 @@ async def get_topics(
     user = current_user
     
     # Add user progress to each topic
+    quiz_scores = user.get("quizScores", {})
     topics_with_progress = []
     for topic in topics:
         topic_data = topic.copy()
         
         # Determine status for this user
-        if topic["id"] in user["completedTopics"]:
+        if topic["id"] in user.get("completedTopics", []):
             topic_data["status"] = "completed"
-            # Mock score for completed topics
-            topic_data["score"] = 85  # You could store actual scores
+            topic_data["score"] = quiz_scores.get(topic["id"], 0)
             topic_data["total"] = 100
-        elif topic["id"] in user["inProgressTopics"]:
+        elif topic["id"] in user.get("inProgressTopics", []):
             topic_data["status"] = "in-progress"
             topic_data["score"] = 0
             topic_data["total"] = 100
@@ -58,7 +58,7 @@ async def get_topic_details(
     topic_id: str,
     current_user: dict = Depends(get_current_user_from_token)
 ):
-    """Get detailed information about a specific topic"""
+    """Get detailed information about a specific topic, with live YouTube videos."""
     topic = get_topic_by_id(topic_id)
     if not topic:
         raise HTTPException(
@@ -69,17 +69,41 @@ async def get_topic_details(
     user = current_user
     
     # Add user's progress status
+    quiz_scores = user.get("quizScores", {})
     topic_data = topic.copy()
-    if topic_id in user["completedTopics"]:
+    if topic_id in user.get("completedTopics", []):
         topic_data["status"] = "completed"
-        topic_data["userScore"] = 85  # Mock score
-    elif topic_id in user["inProgressTopics"]:
+        topic_data["userScore"] = quiz_scores.get(topic_id, 0)
+    elif topic_id in user.get("inProgressTopics", []):
         topic_data["status"] = "in-progress"
         topic_data["userScore"] = 0
     else:
         topic_data["status"] = "pending"
         topic_data["userScore"] = 0
-    
+
+    # --- Dynamically fetch YouTube videos for the topic ---
+    import asyncio, logging
+    _log = logging.getLogger(__name__)
+    try:
+        from app.services.youtube_service import youtube_service
+        live_videos = await asyncio.wait_for(
+            youtube_service.search_for_topic(
+                topic_name=topic["topicName"],
+                language=topic.get("language", ""),
+                max_results=5,
+            ),
+            timeout=8.0,
+        )
+        if live_videos:
+            topic_data["recommendedVideos"] = live_videos
+            _log.info(f"Fetched {len(live_videos)} live YouTube videos for {topic['topicName']}")
+        else:
+            _log.info(f"YouTube API returned no results — using stored videos for {topic['topicName']}")
+    except asyncio.TimeoutError:
+        _log.warning(f"YouTube API timed out for {topic['topicName']} — using stored videos")
+    except Exception as e:
+        _log.warning(f"YouTube API error for {topic['topicName']}: {e} — using stored videos")
+
     return SuccessResponse(
         success=True,
         message="Topic details retrieved successfully",
@@ -140,10 +164,10 @@ async def get_personalized_explanation(
     explanation_style = style or user.get("preferredStyle", "visual")
     
     try:
-        from app.services.openrouter_service import openrouter_service
+        from app.services.adaptive_engine_service import adaptive_engine_service
         
-        # Generate personalized explanation using AI
-        ai_explanation = await openrouter_service.get_personalized_explanation(
+        # Generate personalized explanation using Gemini AI
+        ai_explanation = await adaptive_engine_service.get_personalized_explanation(
             topic=topic["topicName"],
             user_preferred_style=explanation_style,
             difficulty_level=topic["difficulty"],
@@ -188,18 +212,31 @@ async def get_personalized_explanation(
         )
 
 @router.get("/{topic_id}/quiz", response_model=SuccessResponse)
-async def get_topic_quiz(topic_id: str):
-    """Get quiz questions for a specific topic"""
+async def get_topic_quiz(
+    topic_id: str,
+    subtopicId: Optional[str] = Query(None, description="Optional subtopic ID to get subtopic-specific quiz"),
+):
+    """Get quiz questions for a specific topic or subtopic"""
     topic = get_topic_by_id(topic_id)
     if not topic:
         raise HTTPException(status_code=404, detail="Topic not found")
-    
+
+    quiz = topic["quiz"]
+    quiz_name = topic["topicName"]
+
+    if subtopicId:
+        for sub in topic.get("subtopics", []):
+            if sub.get("id") == subtopicId:
+                quiz = sub.get("quiz", topic["quiz"])
+                quiz_name = sub.get("name", topic["topicName"])
+                break
+
     return SuccessResponse(
         success=True,
         message="Quiz questions retrieved successfully",
         data={
             "topicId": topic_id,
-            "topicName": topic["topicName"],
-            "quiz": topic["quiz"]
+            "topicName": quiz_name,
+            "quiz": quiz
         }
     )

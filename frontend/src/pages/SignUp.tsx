@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GradientButton } from '../components/ui/GradientButton';
 import { InputField } from '../components/ui/InputField';
@@ -11,11 +12,26 @@ export const SignUp = () => {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
     const navigate = useNavigate();
+    const { signup, backendError } = useAuth();
 
-    const handleSignUp = (e: React.FormEvent) => {
+    const handleSignUp = async (e: React.FormEvent) => {
         e.preventDefault();
-        navigate('/dashboard'); // No auth logic required
+        setError('');
+        setIsLoading(true);
+        const result = await signup(name, email, password);
+        setIsLoading(false);
+        if (result === true) {
+            navigate('/profile');
+        } else if (result === 'email_exists') {
+            setError('This email is already registered. Please log in instead.');
+        } else {
+            setError(backendError
+                ? 'Cannot connect to server. Please make sure the backend is running (cd backend && python main.py)'
+                : 'Signup failed. Please try again later.');
+        }
     };
 
     return (
@@ -66,10 +82,14 @@ export const SignUp = () => {
                             onChange={(e) => setPassword(e.target.value)}
                         />
 
+                        {error && (
+                            <p className="text-sm text-red-500 text-center">{error}</p>
+                        )}
+
                         <div className="pt-4">
-                            <GradientButton type="submit" fullWidth className="group">
-                                Create Account
-                                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                            <GradientButton type="submit" fullWidth className="group" disabled={isLoading}>
+                                {isLoading ? 'Creating account...' : 'Create Account'}
+                                {!isLoading && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
                             </GradientButton>
                         </div>
                     </form>

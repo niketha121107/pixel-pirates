@@ -1,7 +1,9 @@
-import { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { Search, BookOpen, Home, X, User } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { BookOpen, X, User, ClipboardList, Bot, LogOut, StickyNote, TrendingUp, Search, Sparkles, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../../context/AuthContext';
+import { searchAPI, usersAPI } from '../../services/api';
 
 interface MobileDrawerProps {
     isOpen: boolean;
@@ -11,28 +13,58 @@ interface MobileDrawerProps {
 export const MobileDrawer = ({ isOpen, onClose }: MobileDrawerProps) => {
     const navigate = useNavigate();
     const location = useLocation();
-    const [query, setQuery] = useState('');
-    const [difficulty, setDifficulty] = useState<'easy' | 'difficult'>('easy');
-    const [recentSearches] = useState([
-        'Python Functions',
-        'Java OOP',
-        'C Pointers',
-        'Data Structures',
-    ]);
+    const { logout } = useAuth();
+    const [searchHistory, setSearchHistory] = useState<string[]>([]);
+    const [avgScore, setAvgScore] = useState(0);
+    const [streak, setStreak] = useState(0);
 
-    const handleSearch = () => {
-        if (query.trim()) {
-            navigate(`/topic?q=${encodeURIComponent(query.trim())}&difficulty=${difficulty}`);
-            onClose();
-        }
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') handleSearch();
-    };
-
-    const isDashboard = location.pathname === '/dashboard';
     const isProfile = location.pathname === '/profile';
+    const isTopics = location.pathname === '/videos';
+    const isMockTest = location.pathname === '/mock-test';
+    const isChat = location.pathname === '/chat';
+    const isNotes = location.pathname === '/notes';
+    const isProgress = location.pathname === '/progress';
+
+    const handleLogout = () => {
+        logout();
+        navigate('/signin');
+        onClose();
+    };
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const storedMock = localStorage.getItem('edutwin-mock-results');
+        if (storedMock) {
+            try {
+                const results = JSON.parse(storedMock) as Array<{ percentage?: number }>;
+                const valid = results.filter(r => typeof r.percentage === 'number').map(r => Number(r.percentage));
+                if (valid.length > 0) {
+                    const localAvg = Math.round(valid.reduce((a, b) => a + b, 0) / valid.length);
+                    setAvgScore(localAvg);
+                }
+            } catch {
+                // ignore malformed local data
+            }
+        }
+
+        searchAPI.recent()
+            .then(res => {
+                const items = res.data?.data?.searches || [];
+                setSearchHistory(items.map((s: any) => typeof s === 'string' ? s : s.query || '').filter(Boolean).slice(0, 4));
+            })
+            .catch(() => {});
+
+        usersAPI.stats()
+            .then(res => {
+                const stats = res.data?.data?.stats || {};
+                if (typeof stats.avgScore === 'number' && stats.avgScore > 0) {
+                    setAvgScore(stats.avgScore);
+                }
+                setStreak(stats.streak || 0);
+            })
+            .catch(() => {});
+    }, [isOpen]);
 
     return (
         <AnimatePresence>
@@ -54,7 +86,7 @@ export const MobileDrawer = ({ isOpen, onClose }: MobileDrawerProps) => {
                     >
                         {/* Header */}
                         <div className="px-5 flex items-center justify-between mb-4">
-                            <Link to="/dashboard" onClick={onClose} className="text-2xl font-bold text-gradient">EduTwin</Link>
+                            <Link to="/profile" onClick={onClose} className="text-2xl font-bold text-gradient">EduTwin</Link>
                             <button
                                 onClick={onClose}
                                 className="p-2 text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
@@ -63,24 +95,8 @@ export const MobileDrawer = ({ isOpen, onClose }: MobileDrawerProps) => {
                             </button>
                         </div>
 
-                        {/* Dashboard Nav Link */}
-                        <div className="px-4 mb-2">
-                            <Link
-                                to="/dashboard"
-                                onClick={onClose}
-                                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${
-                                    isDashboard
-                                        ? 'bg-brand/10 text-brand border border-brand/20'
-                                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
-                                }`}
-                            >
-                                <Home className="w-5 h-5" />
-                                Dashboard
-                            </Link>
-                        </div>
-
                         {/* Profile Nav Link */}
-                        <div className="px-4 mb-4">
+                        <div className="px-4 mb-2">
                             <Link
                                 to="/profile"
                                 onClick={onClose}
@@ -95,71 +111,137 @@ export const MobileDrawer = ({ isOpen, onClose }: MobileDrawerProps) => {
                             </Link>
                         </div>
 
-                        <div className="px-4 mb-3">
-                            <div className="h-px bg-pink-100" />
+                        {/* Topics */}
+                        <div className="px-4 mb-2">
+                            <Link
+                                to="/videos"
+                                onClick={onClose}
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${
+                                    isTopics
+                                        ? 'bg-brand/10 text-brand border border-brand/20'
+                                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+                                }`}
+                            >
+                                <BookOpen className="w-5 h-5" />
+                                Topics
+                            </Link>
                         </div>
 
-                        {/* Search */}
-                        <div className="px-4 mb-4">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                <input
-                                    type="text"
-                                    placeholder="Search topics..."
-                                    value={query}
-                                    onChange={(e) => setQuery(e.target.value)}
-                                    onKeyDown={handleKeyDown}
-                                    className="w-full bg-pink-50/30 border border-pink-100 rounded-xl py-2.5 pl-10 pr-4 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand/40 transition-all"
-                                />
+                        {/* Mock Test */}
+                        <div className="px-4 mb-2">
+                            <Link
+                                to="/mock-test"
+                                onClick={onClose}
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${
+                                    isMockTest
+                                        ? 'bg-amber-50 text-amber-600 border border-amber-200'
+                                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+                                }`}
+                            >
+                                <ClipboardList className="w-5 h-5" />
+                                Mock Test
+                            </Link>
+                        </div>
+
+                        {/* AI Chat */}
+                        <div className="px-4 mb-2">
+                            <Link
+                                to="/chat"
+                                onClick={onClose}
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${
+                                    isChat
+                                        ? 'bg-green-50 text-green-600 border border-green-200'
+                                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+                                }`}
+                            >
+                                <Bot className="w-5 h-5" />
+                                AI Tutor Chat
+                            </Link>
+                        </div>
+
+                        {/* Notes */}
+                        <div className="px-4 mb-2">
+                            <Link
+                                to="/notes"
+                                onClick={onClose}
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${
+                                    isNotes
+                                        ? 'bg-yellow-50 text-yellow-600 border border-yellow-200'
+                                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+                                }`}
+                            >
+                                <StickyNote className="w-5 h-5" />
+                                My Notes
+                            </Link>
+                        </div>
+
+                        {/* Progress */}
+                        <div className="px-4 mb-2">
+                            <Link
+                                to="/progress"
+                                onClick={onClose}
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${
+                                    isProgress
+                                        ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+                                }`}
+                            >
+                                <TrendingUp className="w-5 h-5" />
+                                Progress
+                            </Link>
+                        </div>
+
+                        {searchHistory.length > 0 && (
+                            <div className="px-4 mb-2">
+                                <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                                            <Search className="w-3 h-3" /> Recent Searches
+                                        </p>
+                                        <button
+                                            onClick={() => {
+                                                searchAPI.clearRecent().catch(() => {});
+                                                setSearchHistory([]);
+                                            }}
+                                            className="text-gray-400 hover:text-red-500"
+                                        >
+                                            <Trash2 className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                    {searchHistory.map((q, i) => (
+                                        <p key={`${q}-${i}`} className="text-xs text-gray-700 truncate">• {q}</p>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="px-4 mb-2">
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 px-1 flex items-center gap-1">
+                                <Sparkles className="w-3 h-3" /> Progress Flash Cards
+                            </p>
+                            <div className="space-y-2">
+                                <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3">
+                                    <p className="text-xs font-semibold text-blue-700">Performance</p>
+                                    <p className="text-xs text-blue-900 mt-1">Average Score: {avgScore}%</p>
+                                </div>
+                                <div className="rounded-xl border border-purple-200 bg-purple-50/70 p-3">
+                                    <p className="text-xs font-semibold text-purple-700">Streak</p>
+                                    <p className="text-xs text-purple-900 mt-1">{streak} day{streak === 1 ? '' : 's'} active</p>
+                                </div>
                             </div>
                         </div>
 
-                        {/* Difficulty Toggle */}
-                        <div className="px-4 mb-4">
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Difficulty</p>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setDifficulty('easy')}
-                                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                                        difficulty === 'easy'
-                                            ? 'bg-candy-mint/50 text-emerald-700 border border-emerald-300'
-                                            : 'bg-pink-50/30 text-gray-500 border border-pink-100 hover:bg-pink-50'
-                                    }`}
-                                >
-                                    Easy
-                                </button>
-                                <button
-                                    onClick={() => setDifficulty('difficult')}
-                                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                                        difficulty === 'difficult'
-                                            ? 'bg-candy-pink/50 text-pink-700 border border-pink-300'
-                                            : 'bg-pink-50/30 text-gray-500 border border-pink-100 hover:bg-pink-50'
-                                    }`}
-                                >
-                                    Difficult
-                                </button>
-                            </div>
-                        </div>
+                        <div className="flex-1" />
 
-                        {/* Recent Searches */}
-                        <div className="flex-1 px-4 overflow-y-auto">
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Recent Searches</p>
-                            <div className="space-y-1">
-                                {recentSearches.map((item, i) => (
-                                    <motion.button
-                                        key={i}
-                                        whileHover={{ x: 4 }}
-                                        onClick={() => {
-                                            navigate(`/topic?q=${encodeURIComponent(item)}&difficulty=${difficulty}`);
-                                            onClose();
-                                        }}
-                                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-800 transition-colors text-left"
-                                    >
-                                        <BookOpen className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                                        <span className="truncate">{item}</span>
-                                    </motion.button>
-                                ))}
-                            </div>
+                        {/* Logout Button */}
+                        <div className="px-4 pt-3 border-t border-pink-100 mt-2">
+                            <button
+                                onClick={handleLogout}
+                                className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm text-red-500 hover:bg-red-50 hover:text-red-600 w-full"
+                            >
+                                <LogOut className="w-5 h-5" />
+                                Log Out
+                            </button>
                         </div>
                     </motion.aside>
                 </>

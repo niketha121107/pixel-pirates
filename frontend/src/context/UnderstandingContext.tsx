@@ -17,26 +17,21 @@ interface UnderstandingContextType {
 }
 
 const STORAGE_KEY = 'edutwin-understanding';
-
-// Pre-populate with some data for completed topics so the Progress page has something to show
-function generateDefaults(): UnderstandingEntry[] {
-    return [
-        { topicId: 1, topicTitle: 'Python Functions & Scope', value: 82, label: 'Mastered it!', savedAt: Date.now() - 4 * 86400_000 },
-        { topicId: 2, topicTitle: 'Java OOP Basics', value: 58, label: 'Getting there', savedAt: Date.now() - 6 * 86400_000 },
-        { topicId: 3, topicTitle: 'C Pointers Introduction', value: 90, label: 'Mastered it!', savedAt: Date.now() - 9 * 86400_000 },
-        { topicId: 4, topicTitle: 'Data Structures Overview', value: 35, label: 'Getting there', savedAt: Date.now() - 12 * 86400_000 },
-        { topicId: 5, topicTitle: 'SQL Fundamentals', value: 72, label: 'Understand it', savedAt: Date.now() - 14 * 86400_000 },
-    ];
-}
+const CACHE_VERSION_KEY = 'edutwin-understanding-v';
+const CURRENT_VERSION = '2'; // bump to invalidate stale mock data
 
 function load(): UnderstandingEntry[] {
     try {
+        // Invalidate stale cached mock data from older versions
+        if (localStorage.getItem(CACHE_VERSION_KEY) !== CURRENT_VERSION) {
+            localStorage.removeItem(STORAGE_KEY);
+            localStorage.setItem(CACHE_VERSION_KEY, CURRENT_VERSION);
+            return [];
+        }
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) return JSON.parse(raw);
     } catch { /* ignore */ }
-    const defaults = generateDefaults();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
-    return defaults;
+    return [];
 }
 
 function persist(entries: UnderstandingEntry[]) {

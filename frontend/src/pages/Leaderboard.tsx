@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { leaderboardAPI } from '../services/api';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { Navbar } from '../components/layout/Navbar';
 import { Sidebar } from '../components/layout/Sidebar';
@@ -7,16 +9,35 @@ import { GlassCard } from '../components/ui/GlassCard';
 import { Trophy, Medal, Crown } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-export const Leaderboard = () => {
-    const [drawerOpen, setDrawerOpen] = useState(false);
+const badgeFromRank = (rank: number) => {
+    if (rank === 1) return 'Diamond';
+    if (rank === 2) return 'Platinum';
+    if (rank <= 4) return 'Gold';
+    return 'Silver';
+};
 
-    const leaderboardData = [
-        { rank: 1, name: "Sarah J.", xp: 12450, badge: 'Diamond' },
-        { rank: 2, name: "Alex (You)", xp: 11200, badge: 'Platinum', isCurrentUser: true },
-        { rank: 3, name: "Michael R.", xp: 10850, badge: 'Gold' },
-        { rank: 4, name: "Emily W.", xp: 9500, badge: 'Gold' },
-        { rank: 5, name: "David K.", xp: 8200, badge: 'Silver' },
-    ];
+export const Leaderboard = () => {
+    const { user } = useAuth();
+    const [drawerOpen, setDrawerOpen] = useState(false);
+    const [leaderboardData, setLeaderboardData] = useState<{ rank: number; name: string; xp: number; badge: string; isCurrentUser: boolean }[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        setLoading(true);
+        leaderboardAPI.top(10)
+            .then(res => {
+                const entries = (res.data?.data?.topUsers || []).map((u: any) => ({
+                    rank: u.rank,
+                    name: u.userId === user?.id ? `${u.name} (You)` : u.name,
+                    xp: u.score,
+                    badge: badgeFromRank(u.rank),
+                    isCurrentUser: u.userId === user?.id,
+                }));
+                setLeaderboardData(entries);
+            })
+            .catch(() => {})
+            .finally(() => setLoading(false));
+    }, [user]);
 
     return (
         <>

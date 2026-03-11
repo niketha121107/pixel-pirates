@@ -118,7 +118,7 @@ const DAILY_CHALLENGES = [
     "✍️ Summarise today's learning in 3 bullets!",
 ];
 
-export const MotivationalQuotes = () => {
+export const MotivationalQuotes = ({ streak = 0 }: { streak?: number }) => {
     const [currentIndex, setCurrentIndex] = useState(() => Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length));
     const [isAnimating, setIsAnimating] = useState(false);
     const [dailyChallenge] = useState(() => {
@@ -237,7 +237,11 @@ export const MotivationalQuotes = () => {
                 </div>
                 <div>
                     <p className="text-xs font-bold text-emerald-800">Keep Your Streak Alive!</p>
-                    <p className="text-[11px] text-emerald-600">Complete at least one activity today to maintain your 12-day streak.</p>
+                    <p className="text-[11px] text-emerald-600">
+                        {streak > 0
+                            ? `Complete at least one activity today to maintain your ${streak}-day streak.`
+                            : 'Complete an activity today to start your learning streak!'}
+                    </p>
                 </div>
             </motion.div>
         </GlassCard>
