@@ -187,6 +187,88 @@ class AdaptiveEngineService:
             "nextStep": str(parsed.get("nextStep", "Revise and retake.")).strip(),
         }
 
+    async def _call_gemini_text(
+        self,
+        prompt: str,
+        max_tokens: int = 1200,
+        temperature: float = 0.8,
+        timeout: float = 30.0,
+        retries: int = 3
+    ) -> str:
+        """Call Gemini API for text generation (non-JSON) with retry logic"""
+        if not self.api_key:
+            logger.warning("Gemini API key not configured")
+            return ""
+        
+        url = f"{self.base_url}/models/{self.model}:generateContent"
+        
+        for attempt in range(retries):
+            try:
+                params = {"key": self.api_key}
+                payload = {
+                    "contents": [
+                        {
+                            "parts": [
+                                {"text": prompt}
+                            ]
+                        }
+                    ],
+                    "generationConfig": {
+                        "temperature": temperature,
+                        "maxOutputTokens": max_tokens,
+                    },
+                }
+                
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    res = await client.post(url, params=params, json=payload)
+                    
+                    # Handle rate limiting with retry
+                    if res.status_code == 429:
+                        logger.warning(f"Rate limited, attempt {attempt + 1}/{retries}")
+                        if attempt < retries - 1:
+                            import asyncio
+                            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                            continue
+                    
+                    if res.status_code in [400, 401, 403]:
+                        error_data = res.json() if res.text else {}
+                        error_msg = error_data.get("error", {}).get("message", "Unknown error")
+                        logger.error(f"Gemini auth error {res.status_code}: {error_msg}")
+                        return ""
+                    
+                    res.raise_for_status()
+                    data = res.json()
+                    
+                    # Extract text from response
+                    try:
+                        text = data["candidates"][0]["content"]["parts"][0]["text"]
+                        logger.debug(f"Gemini API response received ({len(text)} chars)")
+                        return text.strip()
+                    except (KeyError, IndexError, TypeError) as parse_error:
+                        logger.error(f"Failed to parse Gemini response: {parse_error}. Raw: {data}")
+                        return ""
+                        
+            except httpx.TimeoutException as e:
+                logger.warning(f"Gemini API timeout (attempt {attempt + 1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    import asyncio
+                    await asyncio.sleep(1)
+                    continue
+                return ""
+            except httpx.HTTPStatusError as e:
+                logger.error(f"Gemini API HTTP error {e.response.status_code}: {e.response.text[:200]}")
+                return ""
+            except Exception as e:
+                logger.error(f"Gemini API call failed (attempt {attempt + 1}/{retries}): {type(e).__name__}: {e}")
+                if attempt < retries - 1:
+                    import asyncio
+                    await asyncio.sleep(1)
+                    continue
+                return ""
+        
+        logger.error("Gemini API failed after all retries")
+        return ""
+
     async def chat(
         self,
         message: str,
@@ -200,18 +282,70 @@ class AdaptiveEngineService:
             return self._get_fallback_chat_response(message, user_name)
 
         try:
-            # Build conversation context
+            # Step 1: Generate response in English first for consistency
             conversation_context = f"You are EduTwin AI, a warm and supportive learning companion. Student name: {user_name}. "
+            has_history = bool(history and len(history) > 0)
             
-            # Add history context if available
             if history:
                 conversation_context += "\n\nRecent conversation:\n"
-                for h in history[-6:]:  # Last 6 messages for context
+                for h in history[-6:]:
                     role = h.get("role", "user")
                     content = h.get("content", "")
                     conversation_context += f"{role}: {content}\n"
             
-            lang_instruction = ""
+            english_prompt = f"""{conversation_context}
+
+Respond to this message from {user_name} in ENGLISH FIRST:
+{message}
+
+Guidelines:
+- Be warm, encouraging, and patient
+- Give a direct answer first, then details
+- Keep it concise (about 80-180 words) unless user explicitly asks for a deep explanation
+- Use practical, working examples
+- Include code snippets only when useful
+- Use light markdown for readability
+- Use at most 1-2 emojis
+- End with encouragement or a relevant follow-up question
+- If this is a follow-up message, do NOT greet again (no Hey/Hi/Hello opener)
+- Never re-introduce yourself after the first turn
+
+STRUCTURE RULES (VERY IMPORTANT):
+- For concept/explanation questions, use this exact structure:
+    ### Quick Answer
+    1-2 short sentences.
+
+    ### Key Points
+    - 3 to 5 bullet points, one idea per line.
+
+    ### Example
+    - If coding-related, provide one short code block.
+    - Add 2-4 line explanation after the code block.
+
+    ### Next Step
+    - One practical next action + one short follow-up question.
+
+- For simple greetings like "hi"/"hello", keep response under 40 words.
+- Do not output one huge paragraph.
+- Keep line lengths readable and use spacing between sections."""
+            
+            # Generate complete English response
+            logger.debug(f"Requesting English response from Gemini (timeout: 30s, retries: 3)")
+            english_response = await self._call_gemini_text(
+                english_prompt,
+                max_tokens=2000,
+                temperature=0.8,
+                timeout=30.0,
+                retries=3
+            )
+            
+            if not english_response:
+                logger.warning("English response generation failed, using fallback")
+                return self._get_fallback_chat_response(message, user_name)
+            
+            logger.debug(f"English response generated ({len(english_response)} chars)")
+            
+            # Step 2: If non-English, translate the complete response
             if language and language != "en":
                 lang_map = {
                     "hi": "Hindi", "es": "Spanish", "fr": "French", "de": "German",
@@ -220,58 +354,38 @@ class AdaptiveEngineService:
                     "bn": "Bengali", "kn": "Kannada", "ml": "Malayalam",
                 }
                 lang_name = lang_map.get(language, language)
-                lang_instruction = f"\n- IMPORTANT: You MUST respond entirely in {lang_name}. Write your complete answer in {lang_name} language only. Do NOT respond in English."
-
-            full_prompt = f"""{conversation_context}
-
-Now respond to this message from {user_name}:
-{message}
-
-Guidelines:
-- Be warm, encouraging, and patient like a caring friend
-- Use simple, clear language with concrete examples
-- Add code snippets when helpful
-- Use a few emojis to keep things engaging
-- If they're stuck, break concepts into smaller steps
-- End with encouragement or a follow-up question
-- Keep responses focused and under 250 words{lang_instruction}"""
-
-            url = f"{self.base_url}/models/{self.model}:generateContent"
-            params = {"key": self.api_key}
-            payload = {
-                "contents": [
-                    {
-                        "parts": [
-                            {"text": full_prompt}
-                        ]
-                    }
-                ],
-                "generationConfig": {
-                    "temperature": 0.8,
-                    "maxOutputTokens": 1200,
-                },
-            }
-
-            async with httpx.AsyncClient(timeout=25.0) as client:
-                res = await client.post(url, params=params, json=payload)
                 
-                # Handle authentication errors
-                if res.status_code in [400, 401, 403]:
-                    logger.error(f"Gemini authentication error {res.status_code}: {res.text[:200]}")
-                    return self._get_fallback_chat_response(message, user_name)
-                
-                res.raise_for_status()
-                data = res.json()
+                translation_prompt = f"""Translate the following English explanation to {lang_name} language.
+IMPORTANT:
+- Provide COMPLETE and FULL translation - DO NOT SKIP any lines
+- Include ALL code examples and explanations
+- Keep code syntax unchanged (Python, JavaScript, etc.)
+- Explain code line-by-line in {lang_name}
+- NO abbreviations or summaries - translate everything in detail
+- Maintain all emojis and formatting
 
-            try:
-                response_text = data["candidates"][0]["content"]["parts"][0]["text"]
-                return response_text.strip()
-            except (KeyError, IndexError):
-                logger.error("Failed to extract chat response from Gemini")
-                return self._get_fallback_chat_response(message, user_name)
+English content to translate:
+{english_response}"""
+                
+                translated_response = await self._call_gemini_text(
+                    translation_prompt,
+                    max_tokens=2500,
+                    temperature=0.3,  # Lower temp for consistent translation
+                    timeout=30.0,
+                    retries=3
+                )
+                
+                if translated_response:
+                    logger.debug(f"Translation completed ({len(translated_response)} chars)")
+                    return translated_response
+                else:
+                    logger.warning(f"Translation to {lang_name} failed, returning English")
+                    return english_response
+            
+            return english_response
 
         except Exception as e:
-            logger.error(f"Error in Gemini chat: {e}")
+            logger.error(f"Error in Gemini chat: {type(e).__name__}: {e}")
             return self._get_fallback_chat_response(message, user_name)
 
     def _get_fallback_chat_response(self, message: str, user_name: str) -> str:
@@ -333,7 +447,8 @@ Example: "Explain Python for loops with 3 examples" """
         topic: str,
         user_preferred_style: str,
         difficulty_level: str,
-        additional_context: str = ""
+        additional_context: str = "",
+        language: str = "en"
     ) -> str:
         """Generate personalized explanation based on user's learning style using Gemini"""
         if not self.api_key:
@@ -350,44 +465,76 @@ Example: "Explain Python for loops with 3 examples" """
             style = user_preferred_style.lower()
             guideline = style_guidelines.get(style, style_guidelines["simplified"])
             
-            prompt = f"""Create a {user_preferred_style} explanation for: {topic}
+            # Step 1: Generate complete English explanation first
+            english_prompt = f"""Create a complete, detailed {user_preferred_style} explanation for: {topic}
 
 Difficulty Level: {difficulty_level}
 Learning Style: {user_preferred_style}
-Style Guideline: {guideline}
-Additional Context: {additional_context}
+Context: {additional_context}
 
-Provide an engaging, accurate explanation appropriate for {difficulty_level} level.
-Length: 150-300 words. Include a code example if relevant."""
-
-            url = f"{self.base_url}/models/{self.model}:generateContent"
-            params = {"key": self.api_key}
-            payload = {
-                "contents": [
-                    {
-                        "parts": [
-                            {"text": prompt}
-                        ]
-                    }
-                ],
-                "generationConfig": {
-                    "temperature": 0.7,
-                    "maxOutputTokens": 600,
-                },
-            }
-
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                res = await client.post(url, params=params, json=payload)
-                res.raise_for_status()
-                data = res.json()
-
-            try:
-                return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            except (KeyError, IndexError):
+REQUIREMENTS:
+- Provide COMPLETE and DETAILED explanation
+- ALWAYS include 2-3 working code examples with full explanations
+- Explain each code line in detail
+- Use {guideline}
+- Be comprehensive - include all important details
+- Add practical examples and use cases"""
+            
+            english_explanation = await self._call_gemini_text(
+                english_prompt,
+                max_tokens=2000,
+                temperature=0.7,
+                timeout=30.0,
+                retries=3
+            )
+            
+            if not english_explanation:
+                logger.warning("English explanation generation failed")
                 return "Unable to generate explanation at this time."
+            
+            # Step 2: If non-English, translate the complete explanation
+            if language and language != "en":
+                lang_map = {
+                    "hi": "Hindi", "es": "Spanish", "fr": "French", "de": "German",
+                    "zh": "Chinese", "ja": "Japanese", "ko": "Korean", "ar": "Arabic",
+                    "pt": "Portuguese", "ru": "Russian", "ta": "Tamil", "te": "Telugu",
+                    "bn": "Bengali", "kn": "Kannada", "ml": "Malayalam",
+                }
+                lang_name = lang_map.get(language, language)
+                
+                translation_prompt = f"""Translate the following English explanation to {lang_name} language.
+
+CRITICAL REQUIREMENTS:
+- TRANSLATE COMPLETELY - provide FULL translation of everything
+- DO NOT SKIP any lines, examples, or details
+- Include ALL code examples with complete explanations
+- Keep code syntax unchanged (Python, JavaScript, Java, etc.)
+- Explain code line-by-line in {lang_name}
+- NO abbreviations, summaries, or shortened versions
+- Match the detail and comprehensiveness of the English original
+- Make translation as long and detailed as needed
+
+English explanation to translate:
+{english_explanation}"""
+                
+                translated_explanation = await self._call_gemini_text(
+                    translation_prompt,
+                    max_tokens=2500,
+                    temperature=0.3,  # Lower temp for consistent translation
+                    timeout=30.0,
+                    retries=3
+                )
+                
+                if translated_explanation:
+                    return translated_explanation
+                else:
+                    logger.warning(f"Translation to {lang_name} failed, returning English")
+                    return english_explanation
+            
+            return english_explanation
 
         except Exception as e:
-            logger.error(f"Error generating personalized explanation: {e}")
+            logger.error(f"Error generating personalized explanation: {type(e).__name__}: {e}")
             return "Unable to generate explanation at this time."
 
     async def generate_mock_test(

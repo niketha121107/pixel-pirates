@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { topicsAPI, feedbackAPI } from '../services/api';
+import { topicsAPI, feedbackAPI, progressAPI } from '../services/api';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { Navbar } from '../components/layout/Navbar';
 import { Sidebar } from '../components/layout/Sidebar';
@@ -18,6 +18,7 @@ import { useUnderstanding } from '../context/UnderstandingContext';
 import { useNotifications } from '../context/NotificationContext';
 import { useLearningTimer } from '../context/LearningTimerContext';
 import { useUserPreferences } from '../context/UserPreferencesContext';
+import { useAuth } from '../context/AuthContext';
 import { LANGUAGES } from '../hooks/useTranslation';
 import { sanitizeMojibakeText } from '../lib/text';
 
@@ -127,6 +128,7 @@ const buildAnalogyComparisons = (body: string[]): Array<{ concept: string; realW
 export const TopicView = () => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
+    const { user } = useAuth();
     const topicId = searchParams.get('id') || '';
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [videoProgress, setVideoProgress] = useState(0);
@@ -150,6 +152,8 @@ export const TopicView = () => {
     const [translatedNotes, setTranslatedNotes] = useState('');
     const [notesLang, setNotesLang] = useState(preferences.language || 'en');
     const [isTranslatingNotes, setIsTranslatingNotes] = useState(false);
+    const [testResult, setTestResult] = useState<any>(null);
+    const [hasAttemptedTest, setHasAttemptedTest] = useState(false);
 
 
     const [explanations, setExplanations] = useState<Record<ExplanationType, ExplanationContent>>({
@@ -226,9 +230,72 @@ export const TopicView = () => {
             })
             .catch(() => {})
             .finally(() => setLoadingTopic(false));
-    }, [topicId]);
 
+        // Load test result from localStorage
+        if (user?.id && topicId) {
+            const resultsKey = `edutwin-mock-results_${user.id}`;
+            const stored = localStorage.getItem(resultsKey);
+            if (stored) {
+                try {
+                    const results = JSON.parse(stored);
+                    const topicResult = results.find((r: any) => r.topicId === topicId || r.topic === topicId);
+                    if (topicResult) {
+                        setTestResult(topicResult);
+                        setHasAttemptedTest(true);
+                    } else {
+                        setTestResult(null);
+                        setHasAttemptedTest(false);
+                    }
+                } catch (e) {
+                    setTestResult(null);
+                    setHasAttemptedTest(false);
+                }
+            }
+        }
 
+        // Load video progress from localStorage
+        if (user?.id && topicId) {
+            const progressKey = `edutwin-video-progress_${user.id}`;
+            const stored = localStorage.getItem(progressKey);
+            if (stored) {
+                try {
+                    const progress = JSON.parse(stored);
+                    if (progress[topicId]) {
+                        setVideoProgress(progress[topicId]);
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            }
+        }
+    }, [topicId, user?.id]);
+
+    // Save video progress to localStorage with user-specific key
+    useEffect(() => {
+        if (!user?.id || !topicId || videoProgress === 0) return;
+        
+        const key = `edutwin-video-progress_${user.id}`;
+        const stored = localStorage.getItem(key);
+        const progress = stored ? JSON.parse(stored) : {};
+        progress[topicId] = videoProgress;
+        localStorage.setItem(key, JSON.stringify(progress));
+    }, [videoProgress, topicId, user?.id]);
+
+    // Save video progress to backend at milestones (25%, 50%, 75%, 90%)
+    useEffect(() => {
+        if (!user?.id || !topicId || videoProgress === 0 || videoProgress < 25) return;
+        
+        const milestones = [25, 50, 75, 90, 100];
+        const currentMilestone = milestones.find(m => videoProgress >= m && videoProgress < m + 5);
+        
+        if (currentMilestone) {
+            progressAPI.saveTopic({
+                topic_id: topicId,
+                time_spent: Math.round(elapsedTime),
+                status: videoProgress >= 90 ? 'completed' : 'in-progress',
+            }).catch(() => {});
+        }
+    }, [videoProgress, topicId, user?.id, elapsedTime]);
 
     // Auto-translate notes if saved language is not English
     useEffect(() => {
@@ -250,8 +317,10 @@ export const TopicView = () => {
 
     // Stop tracking when leaving topic
     useEffect(() => {
-        return () => { stopTracking(); };
-    }, [topicId]);
+        return () => { 
+            stopTracking(); 
+        };
+    }, [topicId, stopTracking]);
 
     const insight = getInsight();
     const formatElapsed = (s: number) => {
@@ -261,7 +330,7 @@ export const TopicView = () => {
     };
 
     const handleSaveUnderstanding = (value: number, label: string) => {
-        saveUnderstanding({ topicId: topicId || '', topicTitle, value, label });
+                saveUnderstanding({ topicId: parseInt(topicId) || 0, topicTitle, value, label });
         if (topicId) {
             const rating = Math.min(5, Math.max(1, Math.ceil(value / 20)));
             feedbackAPI.submit({ topic_id: topicId, rating, comment: label }).catch(() => {});
@@ -276,7 +345,7 @@ export const TopicView = () => {
                 type: 'congrats',
                 title: 'Congratulations! Topic completed 🎉',
                 message: `Great job finishing "${topicTitle}"! Keep up the awesome work.`,
-                topicId: topicId,
+                topicId: parseInt(topicId) || 0,
             });
         }
     };
@@ -558,7 +627,7 @@ export const TopicView = () => {
                         <ConfidenceSlider
                             value={confidence}
                             onChange={setConfidence}
-                            topicId={topicId}
+                            topicId={topicId ? parseInt(topicId) : undefined}
                             topicTitle={topicTitle}
                             onSave={handleSaveUnderstanding}
                         />
@@ -715,28 +784,102 @@ export const TopicView = () => {
                                         ))}
                                     </select>
                                 </div>
-                                <div className="p-6 h-[500px] overflow-y-auto">
+                                <div className="p-6 h-[500px] overflow-y-auto space-y-6">
                                     {isTranslatingNotes && (
                                         <div className="flex items-center gap-2 text-xs text-blue-500 mb-3">
                                             <Loader2 className="w-3 h-3 animate-spin" /> Translating notes...
                                         </div>
                                     )}
-                                    <div className="prose prose-sm max-w-none text-gray-700">
-                                        {(() => {
-                                            const noteText = translatedNotes && notesLang !== 'en' ? translatedNotes : topicNotes;
-                                            return noteText ? noteText.split('\n').map((line: string, i: number) => {
-                                            const cleanLine = sanitizeExplanationText(line);
-                                            if (cleanLine.startsWith('## ')) return <h2 key={i} className="text-xl font-bold text-gray-800 mb-3">{cleanLine.replace('## ', '')}</h2>;
-                                            if (cleanLine.startsWith('**') && cleanLine.endsWith('**')) return <p key={i} className="font-bold text-gray-800 mt-4 mb-2">{cleanLine.replace(/\*\*/g, '')}</p>;
-                                            if (cleanLine.startsWith('• ') || cleanLine.startsWith('- ')) return <p key={i} className="pl-4 py-0.5 text-gray-600">{cleanLine}</p>;
-                                            if (cleanLine.startsWith('```')) return <div key={i} className="my-1" />;
-                                            if (cleanLine.trim() === '') return <br key={i} />;
-                                            return <p key={i} className="text-gray-600 leading-relaxed">{cleanLine}</p>;
-                                        }) : (
-                                            <p className="text-gray-400 text-center mt-8">No notes available for this topic.</p>
+                                    {(() => {
+                                        const noteText = translatedNotes && notesLang !== 'en' ? translatedNotes : topicNotes;
+                                        if (!noteText) {
+                                            return <p className="text-gray-400 text-center mt-8">No notes available for this topic.</p>;
+                                        }
+
+                                        // Extract key points from overview text
+                                        const sentences = noteText.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10);
+                                        const keyPoints = sentences.slice(0, 4).map(sentence => {
+                                            // Clean up sentence
+                                            return sanitizeExplanationText(sentence)
+                                                .replace(/^[•\-]\s*/, '')
+                                                .replace(/^[\d+\.]\s*/, '')
+                                                .trim();
+                                        }).filter(p => p.length > 0);
+
+                                        // Extract technical terms (capitalized words or jargon patterns)
+                                        const importantTerms = [...new Set(
+                                            noteText.match(/\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\b/g) || []
+                                        )].slice(0, 8);
+
+                                        return (
+                                            <div className="space-y-6">
+                                                {/* Overview Section */}
+                                                <div>
+                                                    <h3 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2">
+                                                        <Lightbulb className="w-4 h-4 text-brand" />
+                                                        Overview
+                                                    </h3>
+                                                    <p className="text-sm text-gray-600 leading-relaxed line-clamp-3">
+                                                        {sanitizeExplanationText(noteText)}
+                                                    </p>
+                                                </div>
+
+                                                {/* Key Points Section */}
+                                                {keyPoints.length > 0 && (
+                                                    <div>
+                                                        <h3 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2">
+                                                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                                            Key Points
+                                                        </h3>
+                                                        <ul className="space-y-2">
+                                                            {keyPoints.map((point, idx) => (
+                                                                <li key={idx} className="flex gap-2 text-xs text-gray-600">
+                                                                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand flex-shrink-0 mt-1.5" />
+                                                                    <span>{point}</span>
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+
+                                                {/* Important Concepts */}
+                                                {importantTerms.length > 0 && (
+                                                    <div>
+                                                        <h3 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2">
+                                                            <Brain className="w-4 h-4 text-purple-600" />
+                                                            Key Concepts
+                                                        </h3>
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {importantTerms.map((term, idx) => (
+                                                                <span
+                                                                    key={idx}
+                                                                    className="inline-block px-2.5 py-1 bg-purple-50 text-purple-700 text-xs font-medium rounded-lg border border-purple-100"
+                                                                >
+                                                                    {term}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Full Text with Markdown Support */}
+                                                <div className="pt-4 border-t border-gray-200">
+                                                    <h3 className="text-xs font-bold text-gray-600 mb-3 uppercase tracking-wider">Full Notes</h3>
+                                                    <div className="prose prose-sm max-w-none text-gray-700 text-xs space-y-2">
+                                                        {noteText.split('\n').map((line: string, i: number) => {
+                                                            const cleanLine = sanitizeExplanationText(line);
+                                                            if (cleanLine.startsWith('## ')) return <h4 key={i} className="text-sm font-bold text-gray-800 mt-2">{cleanLine.replace('## ', '')}</h4>;
+                                                            if (cleanLine.startsWith('**') && cleanLine.endsWith('**')) return <p key={i} className="font-semibold text-gray-700">{cleanLine.replace(/\*\*/g, '')}</p>;
+                                                            if (cleanLine.startsWith('• ') || cleanLine.startsWith('- ')) return <p key={i} className="pl-3 text-gray-600">{cleanLine}</p>;
+                                                            if (cleanLine.startsWith('```')) return <div key={i} className="my-1" />;
+                                                            if (cleanLine.trim() === '') return null;
+                                                            return <p key={i} className="text-gray-600 leading-relaxed">{cleanLine}</p>;
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </div>
                                         );
-                                        })()}
-                                    </div>
+                                    })()}
                                 </div>
                             </GlassCard>
                         </div>
@@ -772,13 +915,46 @@ export const TopicView = () => {
                             )}
                         </div>
 
-                        {/* Take Mock Test */}
-                        <Link to={`/mock-test?topicId=${topicId}&topic=${encodeURIComponent(topicTitle)}`}>
-                            <GradientButton className="group text-lg px-8 py-4">
-                                Take Mock Test
-                                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                            </GradientButton>
-                        </Link>
+                        {/* Take Mock Test / Test Result */}
+                        {hasAttemptedTest && testResult ? (
+                            <GlassCard className="p-6 bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200">
+                                <div className="flex items-center gap-4">
+                                    <div className="flex-shrink-0 w-16 h-16 rounded-full bg-gradient-to-br from-emerald-300 to-teal-400 flex items-center justify-center">
+                                        <CheckCircle2 className="w-8 h-8 text-white" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <h3 className="text-lg font-bold text-emerald-900">Test Completed!</h3>
+                                        <div className="flex items-center gap-4 mt-2">
+                                            <div>
+                                                <p className="text-xs text-emerald-600 font-medium">Score</p>
+                                                <p className="text-2xl font-bold text-emerald-700">{testResult.score}/{testResult.total}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs text-emerald-600 font-medium">Percentage</p>
+                                                <p className={`text-2xl font-bold ${
+                                                    testResult.percentage >= 80 ? 'text-green-600' : 
+                                                    testResult.percentage >= 50 ? 'text-yellow-600' : 'text-red-500'
+                                                }`}>{Math.round(testResult.percentage)}%</p>
+                                            </div>
+                                        </div>
+                                        <p className="text-xs text-emerald-600 mt-2">This is your final result. Only one attempt allowed.</p>
+                                    </div>
+                                    <button
+                                        onClick={() => navigate('/mock-test-results')}
+                                        className="flex-shrink-0 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium text-sm transition-colors"
+                                    >
+                                        View Details
+                                    </button>
+                                </div>
+                            </GlassCard>
+                        ) : (
+                            <Link to={`/mock-test?topicId=${topicId}&topic=${encodeURIComponent(topicTitle)}`}>
+                                <GradientButton className="group text-lg px-8 py-4">
+                                    Take Mock Test
+                                    <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                                </GradientButton>
+                            </Link>
+                        )}
                     </motion.div>
 
                     {/* ═══ SECTION 5: Navigation & AI Chat ═══ */}

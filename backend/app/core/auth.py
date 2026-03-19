@@ -68,7 +68,7 @@ class AuthUtils:
 # Dependency to get current user from JWT token
 async def get_current_user_from_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     """Extract current user from JWT token and return full user dict"""
-    from app.data import get_user_by_id
+    from app.data import get_user_by_id, get_mock_test_integrity_status
     
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -91,6 +91,18 @@ async def get_current_user_from_token(credentials: HTTPAuthorizationCredentials 
         user = get_user_by_id(user_id)
         if user is None:
             raise credentials_exception
+
+        integrity_status = get_mock_test_integrity_status(user_id)
+        if integrity_status["isSuspended"]:
+            raise HTTPException(
+                status_code=status.HTTP_423_LOCKED,
+                detail={
+                    "message": "Account suspended for mock test malpractice.",
+                    "suspendedUntil": integrity_status["suspendedUntil"],
+                    "warnings": integrity_status["warnings"],
+                    "maxWarnings": integrity_status["maxWarnings"],
+                },
+            )
             
         return user
         

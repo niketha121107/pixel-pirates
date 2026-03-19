@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { topicsAPI } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, BookOpen, Loader2, Code2, CheckCircle2, XCircle, AlertTriangle, Lightbulb } from 'lucide-react';
 import { sanitizeMojibakePreserveLines, sanitizeMojibakeText } from '../lib/text';
 import type { NoteImportance } from '../components/profile/NoteSection';
@@ -21,6 +22,7 @@ interface StudyMaterialData {
 export const StudyMaterial = () => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
+    const { user } = useAuth();
     const topicId = searchParams.get('topicId') || '';
 
     const [loading, setLoading] = useState(true);
@@ -84,7 +86,9 @@ export const StudyMaterial = () => {
 
     const saveSelectionAsNote = () => {
         if (!selectedSnippet) return;
-        const stored = localStorage.getItem('edutwin-notes');
+        // Use user-specific key to isolate notes per user
+        const userKey = `edutwin-notes_${user?.id || 'guest'}`;
+        const stored = localStorage.getItem(userKey);
         const notes = stored ? JSON.parse(stored) : [];
         notes.unshift({
             id: Date.now().toString(),
@@ -97,7 +101,7 @@ export const StudyMaterial = () => {
             createdAt: new Date().toISOString().split('T')[0],
             color: '#fef08a',
         });
-        localStorage.setItem('edutwin-notes', JSON.stringify(notes));
+        localStorage.setItem(userKey, JSON.stringify(notes));
         setSelectedSnippet('');
         setSelectionAnchor(null);
         window.getSelection()?.removeAllRanges();

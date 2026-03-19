@@ -148,6 +148,7 @@ async def update_topic_status(
 async def get_personalized_explanation(
     topic_id: str,
     style: Optional[str] = Query(None, description="Explanation style: visual, simplified, logical, analogy"),
+    language: Optional[str] = Query("en", description="Language code: en, hi, es, fr, de, etc."),
     current_user: dict = Depends(get_current_user_from_token)
 ):
     """Get AI-generated personalized explanation for a topic"""
@@ -171,7 +172,8 @@ async def get_personalized_explanation(
             topic=topic["topicName"],
             user_preferred_style=explanation_style,
             difficulty_level=topic["difficulty"],
-            additional_context=topic["overview"]
+            additional_context=topic["overview"],
+            language=language or "en"
         )
         
         # Also include existing explanations

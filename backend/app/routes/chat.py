@@ -11,10 +11,82 @@ from app.core.auth import get_current_user_from_token
 import asyncio
 import logging
 import random
+import re
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Keywords/patterns that indicate inappropriate content
+INAPPROPRIATE_PATTERNS = [
+    # Violence/harm
+    'how to kill', 'how to hurt', 'how to bomb', 'how to hack', 'how to cheat exam',
+    # Explicit content
+    'nude', 'sex', 'porn', 'xxx', 'adult content',
+    # Illegal activities
+    'how to steal', 'how to cheat', 'how to commit fraud', 'illegal',
+    # Hate/discrimination
+    'racist', 'sexist', 'hate speech', 'discriminate',
+]
+
+
+def _is_inappropriate_question(message: str) -> bool:
+    """Check if the question contains inappropriate content"""
+    msg_lower = message.lower().strip()
+    for pattern in INAPPROPRIATE_PATTERNS:
+        if pattern in msg_lower:
+            return True
+    return False
+
+
+def _build_redirect_response(user_name: str) -> str:
+    """Build a friendly redirect message for inappropriate questions"""
+    responses = [
+        f"Hey {user_name}! 👋 I appreciate your curiosity, but that's not something I can help with here. "
+        f"Remember, we're here on this platform to learn and grow together! 📚✨ "
+        f"How about we focus on something related to your learning goals instead? "
+        f"I'd love to help you master programming, data structures, algorithms, or any other tech topic! What would you like to learn? 🚀",
+        
+        f"Hi {user_name}! 😊 I'm here specifically to support your learning journey on this platform. "
+        f"That question isn't related to your studies, so let's keep our chat focused on helping you succeed! 💪 "
+        f"Whether it's Python, JavaScript, Java, or other programming topics, I'm ready to help! What shall we learn today? 📖",
+        
+        f"Hello {user_name}! 👨‍💻 This platform is all about building your tech skills and knowledge! "
+        f"That topic doesn't fit our learning mission, so let's redirect to something constructive. "
+        f"I can help you understand complex concepts, debug code, create quizzes, or explore new topics in tech! What interests you? 🎯",
+    ]
+    return random.choice(responses)
+
+
+def _strip_followup_greeting(text: str, user_name: str) -> str:
+    """Remove greeting-style opener for non-first messages.
+
+    This keeps the first message friendly, but follow-ups direct.
+    """
+    if not text:
+        return text
+
+    normalized_name = re.escape((user_name or "").strip())
+    first_line, *rest = text.split("\n")
+    first = first_line.strip()
+
+    patterns = [
+        rf"^(hey|hi|hello|hiya|greetings)\b",
+        rf"^(hey|hi|hello)\s+{normalized_name}\b",
+    ]
+
+    if any(re.search(p, first, flags=re.IGNORECASE) for p in patterns):
+        cleaned_first = re.sub(
+            rf"^(hey|hi|hello|hiya|greetings)(\s+{normalized_name})?\s*[,!\-:\.]?\s*",
+            "",
+            first,
+            flags=re.IGNORECASE,
+        ).strip()
+        rebuilt = [cleaned_first] if cleaned_first else []
+        rebuilt.extend(rest)
+        return "\n".join(rebuilt).strip()
+
+    return text
 
 
 class ChatMessageIn(BaseModel):
@@ -78,25 +150,21 @@ def _build_fallback_response(user_name: str, message: str, history: List[dict]) 
         )
     elif 'python' in lower:
         body = (
-            "Python! Awesome choice! 🐍✨\n\n"
-            "Here's your roadmap to Python mastery:\n\n"
-            "**1. Basics (Start here!)** 🎯\n"
-            "   • Variables and data types (numbers, strings, booleans)\n"
-            "   • Input/output with print() and input()\n\n"
-            "**2. Control Flow** 🔄\n"
-            "   • if/elif/else conditions\n"
-            "   • for and while loops\n\n"
-            "**3. Data Structures** 📦\n"
-            "   • Lists, dictionaries, sets, tuples\n"
-            "   • When to use each one\n\n"
-            "**4. Functions** ⚡\n"
-            "   • def keyword, parameters, return values\n"
-            "   • Making your code reusable!\n\n"
-            "**5. Next Level** 🚀\n"
-            "   • Classes and OOP\n"
-            "   • File handling\n"
-            "   • Error handling with try/except\n\n"
-            "Which topic sounds interesting? I can break it down with examples! 😊"
+            "### Quick Answer\n"
+            "Python is beginner-friendly, powerful, and used in web, AI, automation, and data work.\n\n"
+            "### Key Points\n"
+            "- Clean syntax that is easy to read and write\n"
+            "- Huge ecosystem of libraries for real projects\n"
+            "- Great for both beginners and advanced developers\n"
+            "- Works for scripting, backend, data science, and ML\n\n"
+            "### Example\n"
+            "```python\n"
+            "name = 'test3'\n"
+            "print(f'Hello, {name}!')\n"
+            "```\n"
+            "This prints a personalized greeting and shows how readable Python is.\n\n"
+            "### Next Step\n"
+            "Want a quick mini-path: variables -> conditions -> loops -> functions?"
         )
     elif 'javascript' in lower or 'js' in lower:
         body = (
@@ -122,16 +190,17 @@ def _build_fallback_response(user_name: str, message: str, history: List[dict]) 
         )
     else:
         body = (
-            f"You asked: \"{text[:100]}{'...' if len(text) > 100 else ''}\"\n\n"
-            "I want to give you the best answer! To help me understand what you need, try:\n\n"
-            "**Format that works great:**\n"
-            "• \"Explain [topic] to me like I'm a beginner\"\n"
-            "• \"Show me code examples for [topic]\"\n"
-            "• \"Give me practice questions on [topic]\"\n"
-            "• \"What's the difference between [thing A] and [thing B]?\"\n\n"
-            "**Example:**\n"
-            "\"Explain Python for loops with 3 simple examples\" 👍\n\n"
-            "Don't worry about getting it perfect - just ask naturally! I'm here to help! 😊"
+            "### Quick Answer\n"
+            f"I can definitely help with: \"{text[:100]}{'...' if len(text) > 100 else ''}\".\n\n"
+            "### Key Points\n"
+            "- Tell me the exact topic or concept\n"
+            "- Mention your level: beginner / intermediate / advanced\n"
+            "- Say whether you want theory, code, or practice questions\n\n"
+            "### Example Prompt\n"
+            "- \"Explain Python for loops like I'm a beginner with 2 examples.\"\n"
+            "- \"Compare list vs tuple with one code sample.\"\n\n"
+            "### Next Step\n"
+            "Share your exact learning goal and I’ll structure a crisp answer for you."
         )
 
     last_assistant = ''
@@ -140,7 +209,11 @@ def _build_fallback_response(user_name: str, message: str, history: List[dict]) 
             last_assistant = str(item.get('content') or '').strip()
             break
 
-    response = f"{random.choice(intro_options)}\n\n{body}\n\n💡 **Pro tip:** I can also create custom quizzes, explain code you're stuck on, or help you debug! Just let me know what you need!"
+    has_history = bool(history and len(history) > 0)
+    if has_history:
+        response = f"{body}\n\n💡 **Pro tip:** I can also create custom quizzes, explain code you're stuck on, or help you debug! Just let me know what you need!"
+    else:
+        response = f"{random.choice(intro_options)}\n\n{body}\n\n💡 **Pro tip:** I can also create custom quizzes, explain code you're stuck on, or help you debug! Just let me know what you need!"
 
     # Avoid sending identical fallback twice in a row.
     if last_assistant and response.strip() == last_assistant.strip():
@@ -163,6 +236,15 @@ async def send_chat_message(
             {"role": m.role, "content": m.content}
             for m in (req.history or [])
         ]
+
+        # Check if the question is inappropriate (redirect instead of refusing)
+        if _is_inappropriate_question(req.message):
+            ai_response = _build_redirect_response(user_name)
+            return SuccessResponse(
+                success=True,
+                message="Chat response generated",
+                data={"response": ai_response},
+            )
 
         # Check if user is asking for an image/diagram
         lower_msg = req.message.lower()
@@ -202,6 +284,10 @@ async def send_chat_message(
                 message=req.message,
                 history=history,
             )
+
+        # Keep follow-up replies direct: no repeated greetings after first turn.
+        if history and len(history) > 0:
+            ai_response = _strip_followup_greeting(ai_response, user_name)
 
         response_data: dict = {"response": ai_response}
         if image_data:

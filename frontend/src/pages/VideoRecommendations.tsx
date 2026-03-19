@@ -6,9 +6,10 @@ import { Sidebar } from '../components/layout/Sidebar';
 import { MobileDrawer } from '../components/layout/MobileDrawer';
 import { GlassCard } from '../components/ui/GlassCard';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpen, CheckCircle2, Clock, ChevronRight, Target, XCircle, Filter, Loader2, Search, Mic, MicOff, Code2, ChevronDown, ChevronUp } from 'lucide-react';
+import { BookOpen, CheckCircle2, Clock, ChevronRight, Target, XCircle, Filter, Loader2, Search, Mic, MicOff, Code2, ChevronDown, ChevronUp, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useVoiceSearch } from '../hooks/useVoiceSearch';
+import { useAuth } from '../context/AuthContext';
 
 // Language colors for visual distinction
 const LANG_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -46,19 +47,85 @@ interface TopicItem {
 }
 
 export const VideoRecommendations = () => {
+    const { user } = useAuth();
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [allTopics, setAllTopics] = useState<TopicItem[]>([]);
-    const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'pending'>('all');
-    const [languageFilter, setLanguageFilter] = useState<string>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'completed'>('all');
     const [expandedLangs, setExpandedLangs] = useState<Set<string>>(new Set());
     const [searchQuery, setSearchQuery] = useState('');
     const [loading, setLoading] = useState(true);
+    const [videoProgress, setVideoProgress] = useState<Record<string, number>>({});
+    const [testResults, setTestResults] = useState<Record<string, boolean>>({});
 
     // Voice search
     const handleVoiceResult = useCallback((text: string) => {
         setSearchQuery(prev => prev + text);
     }, []);
     const { isListening, startListening, stopListening, isSupported: voiceSupported } = useVoiceSearch(handleVoiceResult);
+
+    // Load video progress and test results on mount
+    useEffect(() => {
+        if (!user?.id) return;
+        
+        // Load video progress
+        const videoKey = `edutwin-video-progress_${user.id}`;
+        const videoStored = localStorage.getItem(videoKey);
+        if (videoStored) {
+            setVideoProgress(JSON.parse(videoStored));
+        }
+
+        // Load test results
+        const testKey = `edutwin-mock-results_${user.id}`;
+        const testStored = localStorage.getItem(testKey);
+        if (testStored) {
+            try {
+                const results = JSON.parse(testStored);
+                const completedTopics: Record<string, boolean> = {};
+                results.forEach((r: any) => {
+                    // Mark topic as test-completed if either topicId or topic field is present
+                    if (r.topicId) completedTopics[String(r.topicId)] = true;
+                    if (r.topic) completedTopics[String(r.topic)] = true;
+                });
+                setTestResults(completedTopics);
+            } catch (e) {
+                // ignore
+            }
+        }
+    }, [user?.id]);
+
+    // Refresh test results and video progress when page becomes visible (user returns from MockTest or TopicView)
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (!document.hidden && user?.id) {
+                // Refresh video progress
+                const videoKey = `edutwin-video-progress_${user.id}`;
+                const videoStored = localStorage.getItem(videoKey);
+                if (videoStored) {
+                    setVideoProgress(JSON.parse(videoStored));
+                }
+
+                // Refresh test results
+                const testKey = `edutwin-mock-results_${user.id}`;
+                const testStored = localStorage.getItem(testKey);
+                if (testStored) {
+                    try {
+                        const results = JSON.parse(testStored);
+                        const completedTopics: Record<string, boolean> = {};
+                        results.forEach((r: any) => {
+                            if (r.topicId) completedTopics[String(r.topicId)] = true;
+                            if (r.topic) completedTopics[String(r.topic)] = true;
+                        });
+                        setTestResults(completedTopics);
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, [user?.id]);
 
     useEffect(() => {
         const fetchTopics = async () => {
@@ -84,23 +151,30 @@ export const VideoRecommendations = () => {
         fetchTopics();
     }, []);
 
-    const completedCount = allTopics.filter(t => t.status === 'completed').length;
-    const pendingCount = allTopics.filter(t => t.status === 'pending').length;
+    // Calculate completed count based on fully completed topics (video 90%+ AND test done from localStorage)
+    const completedCount = useMemo(() => {
+        return allTopics.filter(topic => {
+            const topicProgress = videoProgress[String(topic.id)] || 0;
+            const testCompleted = testResults[String(topic.id)] === true;
+            return topicProgress >= 90 && testCompleted;
+        }).length;
+    }, [allTopics, videoProgress, testResults]);
+
+    // Check if a topic is fully completed (both video watched 90%+ AND test completed)
+    // Test completion is checked from localStorage (reflects immediate test submission)
+    const isTopicFullyCompleted = useCallback((topicId: string | number) => {
+        const topicProgress = videoProgress[String(topicId)] || 0;
+        const testCompleted = testResults[String(topicId)] === true;
+        return topicProgress >= 90 && testCompleted;
+    }, [videoProgress, testResults]);
 
     const filteredTopics = allTopics.filter(topic => {
-        const matchesStatus = statusFilter === 'all' || topic.status === statusFilter;
+        // For 'completed' filter, check if topic is fully completed via localStorage
+        // For 'all' filter, show all topics
+        const matchesStatus = statusFilter === 'all' || (statusFilter === 'completed' && isTopicFullyCompleted(topic.id));
         const matchesSearch = !searchQuery.trim() || topic.title.toLowerCase().includes(searchQuery.toLowerCase()) || topic.lang.toLowerCase().includes(searchQuery.toLowerCase()) || (topic.difficulty || '').toLowerCase().includes(searchQuery.toLowerCase()) || topic.status.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesLang = languageFilter === 'all' || topic.lang === languageFilter;
-        return matchesStatus && matchesSearch && matchesLang;
+        return matchesStatus && matchesSearch;
     });
-
-    const availableLanguages = useMemo(() => {
-        const langCount: Record<string, number> = {};
-        allTopics.forEach(t => { langCount[t.lang] = (langCount[t.lang] || 0) + 1; });
-        return Object.entries(langCount)
-            .sort((a, b) => b[1] - a[1])
-            .map(([lang, count]) => ({ lang, count }));
-    }, [allTopics]);
 
     const groupedTopics = useMemo(() => {
         const groups: Record<string, typeof filteredTopics> = {};
@@ -164,7 +238,7 @@ export const VideoRecommendations = () => {
                     </motion.div>
 
                     {/* Stats Summary */}
-                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="grid grid-cols-3 gap-4">
+                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="grid grid-cols-2 gap-4">
                         <GlassCard className="p-4 flex items-center gap-3">
                             <div className="p-2.5 bg-brand/10 rounded-xl"><BookOpen className="w-5 h-5 text-brand" /></div>
                             <div>
@@ -179,39 +253,28 @@ export const VideoRecommendations = () => {
                                 <p className="text-xs text-gray-500">Completed</p>
                             </div>
                         </GlassCard>
-                        <GlassCard className="p-4 flex items-center gap-3">
-                            <div className="p-2.5 bg-candy-peach/40 rounded-xl"><Clock className="w-5 h-5 text-orange-600" /></div>
-                            <div>
-                                <p className="text-2xl font-bold text-gray-800">{pendingCount}</p>
-                                <p className="text-xs text-gray-500">Pending</p>
-                            </div>
-                        </GlassCard>
                     </motion.div>
 
                     {/* Filter */}
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="space-y-3">
                         <div className="flex gap-2">
-                            {(['all', 'completed', 'pending'] as const).map(f => (
+                            {(['all', 'completed'] as const).map(f => (
                                 <button
                                     key={f}
                                     onClick={() => setStatusFilter(f)}
                                     className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5 ${
                                         statusFilter === f
                                             ? f === 'completed' ? 'bg-candy-mint/50 text-emerald-700 border border-emerald-300'
-                                            : f === 'pending' ? 'bg-candy-peach/50 text-orange-700 border border-orange-300'
                                             : 'bg-brand/10 text-brand border border-brand/20'
                                             : 'bg-pink-50/30 text-gray-500 border border-pink-100 hover:bg-pink-50'
                                     }`}
                                 >
                                     {f === 'all' && <Filter className="w-3.5 h-3.5" />}
                                     {f === 'completed' && <CheckCircle2 className="w-3.5 h-3.5" />}
-                                    {f === 'pending' && <Clock className="w-3.5 h-3.5" />}
                                     {f.charAt(0).toUpperCase() + f.slice(1)}
                                 </button>
                             ))}
                         </div>
-
-
                     </motion.div>
 
                     {/* Topics List — Grouped by Language */}
@@ -228,11 +291,10 @@ export const VideoRecommendations = () => {
                                 return (
                                     <div key={lang} className="space-y-3">
                                         {/* Language Group Header */}
-                                        {languageFilter === 'all' && (
-                                            <button
-                                                onClick={() => toggleLangExpand(lang)}
-                                                className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl ${colors.bg} border ${colors.border} transition-all hover:shadow-sm`}
-                                            >
+                                        <button
+                                            onClick={() => toggleLangExpand(lang)}
+                                            className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl ${colors.bg} border ${colors.border} transition-all hover:shadow-sm`}
+                                        >
                                                 <div className="flex items-center gap-3">
                                                     <Code2 className={`w-4.5 h-4.5 ${colors.text}`} />
                                                     <span className={`text-sm font-bold ${colors.text}`}>{lang}</span>
@@ -245,7 +307,6 @@ export const VideoRecommendations = () => {
                                                 </div>
                                                 {isCollapsed ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronUp className="w-4 h-4 text-gray-400" />}
                                             </button>
-                                        )}
 
                                         <AnimatePresence mode="popLayout">
                                             {!isCollapsed && (
@@ -257,6 +318,8 @@ export const VideoRecommendations = () => {
                                                 >
                                                     {topics.map((topic) => {
                                                         const scorePercent = topic.total > 0 && topic.status === 'completed' ? Math.round((topic.score / topic.total) * 100) : 0;
+                                                        const videoWatchPercent = videoProgress[String(topic.id)] || 0;
+                                                        const isFullyCompleted = isTopicFullyCompleted(topic.id);
                                                         return (
                                                             <motion.div
                                                                 key={topic.id}
@@ -266,14 +329,22 @@ export const VideoRecommendations = () => {
                                                                 exit={{ opacity: 0, scale: 0.95 }}
                                                             >
                                                                 <Link to={`/topic?id=${topic.id}`}>
-                                                                    <GlassCard interactive className="p-4 flex items-center gap-4">
+                                                                    <GlassCard interactive className={`p-4 flex items-center gap-4 transition-all ${
+                                                                        isFullyCompleted
+                                                                            ? 'bg-gradient-to-br from-green-50 to-emerald-50/30 border border-green-200 shadow-lg shadow-green-100/30'
+                                                                            : ''
+                                                                    }`}>
                                                                         {/* Status Icon */}
                                                                         <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-                                                                            topic.status === 'completed'
-                                                                                ? scorePercent >= 80 ? 'bg-candy-mint/50' : scorePercent >= 50 ? 'bg-candy-lemon/50' : 'bg-candy-pink/50'
-                                                                                : 'bg-pink-50'
+                                                                            isFullyCompleted
+                                                                                ? 'bg-gradient-to-br from-green-200 to-emerald-300'
+                                                                                : topic.status === 'completed'
+                                                                                    ? scorePercent >= 80 ? 'bg-candy-mint/50' : scorePercent >= 50 ? 'bg-candy-lemon/50' : 'bg-candy-pink/50'
+                                                                                    : 'bg-pink-50'
                                                                         }`}>
-                                                                            {topic.status === 'completed' ? (
+                                                                            {isFullyCompleted ? (
+                                                                                <Zap className="w-5 h-5 text-white" />
+                                                                            ) : topic.status === 'completed' ? (
                                                                                 scorePercent >= 80 ? <CheckCircle2 className="w-5 h-5 text-green-600" />
                                                                                 : scorePercent >= 50 ? <Target className="w-5 h-5 text-yellow-600" />
                                                                                 : <XCircle className="w-5 h-5 text-red-500" />
@@ -287,22 +358,31 @@ export const VideoRecommendations = () => {
                                                                             <div className="flex items-center gap-2 mb-0.5">
                                                                                 <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${colors.text} ${colors.bg}`}>{topic.lang}</span>
                                                                                 <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                                                                                    topic.status === 'completed'
-                                                                                        ? 'bg-candy-mint/50 text-emerald-700'
-                                                                                        : 'bg-candy-peach/50 text-orange-700'
+                                                                                    isFullyCompleted
+                                                                                        ? 'bg-gradient-to-r from-green-200 to-emerald-200 text-green-900'
+                                                                                        : topic.status === 'completed'
+                                                                                            ? 'bg-candy-mint/50 text-emerald-700'
+                                                                                            : 'bg-candy-peach/50 text-orange-700'
                                                                                 }`}>
-                                                                                    {topic.status}
+                                                                                    {isFullyCompleted ? '✓ fully done' : topic.status}
                                                                                 </span>
                                                                                 {topic.difficulty && (
                                                                                     <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{topic.difficulty}</span>
                                                                                 )}
                                                                             </div>
-                                                                            <h3 className="font-semibold text-gray-800 truncate text-sm">{topic.title}</h3>
+                                                                            <h3 className={`font-semibold truncate text-sm ${
+                                                                                isFullyCompleted ? 'text-green-800' : 'text-gray-800'
+                                                                            }`}>{topic.title}</h3>
+                                                                            {videoWatchPercent > 0 && !isFullyCompleted && (
+                                                                                <p className="text-xs text-gray-500 mt-1">Video: {Math.round(videoWatchPercent)}% watched</p>
+                                                                            )}
                                                                         </div>
 
                                                                         {/* Score or Arrow */}
                                                                         <div className="flex-shrink-0 flex items-center gap-2">
-                                                                            {topic.status === 'completed' ? (
+                                                                            {isFullyCompleted ? (
+                                                                                <div className="text-lg font-bold text-green-600">✓</div>
+                                                                            ) : topic.status === 'completed' ? (
                                                                                 <div className={`text-lg font-bold ${
                                                                                     scorePercent >= 80 ? 'text-green-600' : scorePercent >= 50 ? 'text-yellow-600' : 'text-red-500'
                                                                                 }`}>

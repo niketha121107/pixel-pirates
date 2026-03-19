@@ -9,6 +9,7 @@ import { ProgressRing } from '../components/ui/ProgressRing';
 import { BookCheck, Trophy, Target, Clock, CheckCircle2, XCircle, Brain, Frown, Meh, Smile, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useUnderstanding } from '../context/UnderstandingContext';
+import { useAuth } from '../context/AuthContext';
 
 const getLevelInfo = (val: number) => {
     if (val < 25) return { icon: Frown, color: 'text-red-500', bg: 'bg-red-50', border: 'border-red-200', label: 'Struggling', barColor: 'bg-red-500' };
@@ -19,7 +20,9 @@ const getLevelInfo = (val: number) => {
 
 export const Progress = () => {
     const [drawerOpen, setDrawerOpen] = useState(false);
+    const { user } = useAuth();
     const { entries, averageUnderstanding } = useUnderstanding();
+    const [loading, setLoading] = useState(true);
     const [completedTopics, setCompletedTopics] = useState<{ title: string; score: number; total: number; date: string; videoWatched: boolean }[]>([]);
     const [overallStats, setOverallStats] = useState({
         totalTopics: 0,
@@ -29,13 +32,15 @@ export const Progress = () => {
         totalHoursLearned: 0,
         streak: 0,
     });
-    const [loading, setLoading] = useState(true);
+
 
     useEffect(() => {
         const fetchAll = async () => {
             setLoading(true);
             try {
-                const localMockRaw = localStorage.getItem('edutwin-mock-results');
+                // Use user-specific key to isolate test results per user
+                const userKey = `edutwin-mock-results_${user?.id || 'guest'}`;
+                const localMockRaw = localStorage.getItem(userKey);
                 let localMock: Array<{ topic?: string; percentage?: number; score?: number; maxScore?: number; createdAt?: string; timeTakenSec?: number }> = [];
                 if (localMockRaw) {
                     try {
@@ -100,7 +105,7 @@ export const Progress = () => {
             }
         };
         fetchAll();
-    }, []);
+    }, [user?.id]);
 
     const completionPercentage = overallStats.totalTopics > 0 ? Math.round((overallStats.completedTopics / overallStats.totalTopics) * 100) : 0;
 

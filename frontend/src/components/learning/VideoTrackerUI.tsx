@@ -11,8 +11,9 @@ interface VideoTrackerUIProps {
 export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }: VideoTrackerUIProps) => {
     const [progress, setProgress] = useState(0);
     const [loadEmbed, setLoadEmbed] = useState(false);
-    const iframeRef = useRef<HTMLIFrameElement>(null);
-    const intervalRef = useRef<ReturnType<typeof setInterval>>();
+    const [isPlaying, setIsPlaying] = useState(false);
+    const playerRef = useRef<any>(null);
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // Extract YouTube video ID
     const getYouTubeId = (videoUrl: string) => {
@@ -22,31 +23,88 @@ export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }:
 
     const videoId = getYouTubeId(url);
 
-    // For YouTube videos, track approximate progress via timer
+    // Initialize YouTube Iframe API
     useEffect(() => {
         if (!videoId || !loadEmbed) return;
-        // Simple timer-based progress estimation (since iframe API is complex)
-        let elapsed = 0;
-        const estimatedDuration = 600; // assume ~10 min
-        intervalRef.current = setInterval(() => {
-            elapsed += 1;
-            const played = Math.min((elapsed / estimatedDuration) * 100, 99);
-            setProgress(played);
-            onProgressCallback?.(played);
-        }, 1000);
+
+        // Load YouTube IFrame API
+        if (!(window as any).YT) {
+            const tag = document.createElement('script');
+            tag.src = 'https://www.youtube.com/iframe_api';
+            document.body.appendChild(tag);
+        }
+
+        // Wait for YT to be ready, then create player
+        const checkYT = setInterval(() => {
+            if ((window as any).YT && (window as any).YT.Player) {
+                clearInterval(checkYT);
+                
+                const player = new (window as any).YT.Player('yt-player', {
+                    videoId: videoId,
+                    playerVars: {
+                        autoplay: 0,
+                        controls: 0,  // Disable default controls to prevent speed manipulation
+                        modestbranding: 1,
+                        rel: 0,
+                        fs: 0,  // Disable fullscreen
+                        showinfo: 0,  // Hide video info
+                    },
+                    events: {
+                        onStateChange: (event: any) => {
+                            // 1 = PLAYING, 0 = ENDED, 2 = PAUSED, -1 = UNSTARTED
+                            const isPlayerPlaying = event.data === (window as any).YT.PlayerState.PLAYING;
+                            setIsPlaying(isPlayerPlaying);
+                        },
+                        onEnded: () => {
+                            setProgress(100);
+                            setIsPlaying(false);
+                            onProgressCallback?.(100);
+                            onEnded?.();
+                        },
+                    },
+                });
+
+                playerRef.current = player;
+            }
+        }, 100);
+
+        return () => clearInterval(checkYT);
+    }, [videoId, loadEmbed]);
+
+    // Track progress only when video is actually playing
+    useEffect(() => {
+        if (!isPlaying || !playerRef.current) return;
+
+        const updateProgress = () => {
+            try {
+                if (playerRef.current && playerRef.current.getCurrentTime) {
+                    const current = playerRef.current.getCurrentTime();
+                    const duration = playerRef.current.getDuration();
+                    if (duration > 0) {
+                        const played = (current / duration) * 100;
+                        setProgress(Math.min(played, 100));
+                        onProgressCallback?.(Math.min(played, 100));
+                    }
+                }
+            } catch (e) {
+                // Player not fully ready yet
+            }
+        };
+
+        intervalRef.current = setInterval(updateProgress, 500);
 
         return () => {
             if (intervalRef.current) clearInterval(intervalRef.current);
         };
-    }, [videoId, loadEmbed]);
+    }, [isPlaying]);
 
-    // For YouTube URLs, use direct iframe embed (more reliable than react-player)
+    // For YouTube videos, use YouTube Iframe API
     if (videoId) {
         return (
             <GlassCard className="p-0 overflow-hidden">
                 <div className="relative aspect-video bg-black rounded-xl overflow-hidden">
                     {!loadEmbed ? (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-slate-900 to-slate-800 text-white px-4 text-center">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-slate-900 to-slate-800 text-white px-4 text-center rounded-xl z-10">
                             <p className="text-sm text-white/85">Video is ready to load.</p>
                             <button
                                 onClick={() => setLoadEmbed(true)}
@@ -55,16 +113,11 @@ export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }:
                                 Load Video
                             </button>
                         </div>
-                    ) : (
-                        <iframe
-                            ref={iframeRef}
-                            src={`https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1&autoplay=0&enablejsapi=1`}
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                            className="absolute inset-0 w-full h-full"
-                            title="Video lesson"
-                        />
-                    )}
+                    ) : null}
+                    <div 
+                        id="yt-player"
+                        className="w-full h-full"
+                    />
                 </div>
             </GlassCard>
         );
@@ -73,27 +126,48 @@ export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }:
     // Bypass faulty react-player TypeScript definitions
     const Player = ReactPlayer as any;
 
-    // For non-YouTube URLs, use react-player
+    // For non-YouTube URLs, use react-player with playback rate disabled
     return (
         <GlassCard className="p-0 overflow-hidden">
             <div className="relative aspect-video bg-black rounded-xl overflow-hidden">
                 <Player
+                    ref={playerRef}
                     url={url}
                     width="100%"
                     height="100%"
                     controls
+                    playing={isPlaying}
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
                     onProgress={(state: any) => {
-                        const played = state.played * 100;
-                        setProgress(played);
-                        onProgressCallback?.(played);
+                        // Only update progress if playing
+                        if (isPlaying) {
+                            const played = state.played * 100;
+                            setProgress(played);
+                            onProgressCallback?.(played);
+                        }
                     }}
-                    onEnded={onEnded}
+                    onEnded={() => {
+                        setProgress(100);
+                        setIsPlaying(false);
+                        onProgressCallback?.(100);
+                        onEnded?.();
+                    }}
+                    progressInterval={500}
                     config={{
                         youtube: {
                             playerVars: {
                                 modestbranding: 1,
                                 rel: 0,
                                 origin: window.location.origin,
+                                fs: 0,
+                                controls: 0,
+                            },
+                        },
+                        file: {
+                            attributes: {
+                                controlsList: 'nodownload',
+                                onContextMenu: (e: any) => e.preventDefault(),
                             },
                         },
                     }}

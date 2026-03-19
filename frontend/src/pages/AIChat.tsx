@@ -8,10 +8,12 @@ import { GlassCard } from '../components/ui/GlassCard';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
 import { motion, AnimatePresence } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
-    Send, Bot, User, Loader2, Sparkles, Globe, Trash2,
+    Send, Bot, User, Loader2, Sparkles, Globe,
     ThumbsUp, ThumbsDown, BookOpen, Code, Lightbulb,
-    MessageSquare, ChevronDown, Languages, Mic, MicOff
+    MessageSquare, ChevronDown, Mic, MicOff
 } from 'lucide-react';
 import { useVoiceSearch } from '../hooks/useVoiceSearch';
 import api from '../services/api';
@@ -29,6 +31,13 @@ interface ChatMessage {
     image?: string; // base64 image data from Gemini
 }
 
+interface ChatSession {
+    id: string;
+    title: string;
+    messages: ChatMessage[];
+    updatedAt: number;
+}
+
 const QUICK_PROMPTS = [
     { icon: Code, label: 'Explain a concept', prompt: 'Hey! Can you explain ' },
     { icon: Lightbulb, label: 'Give me tips', prompt: 'What are some good tips for learning ' },
@@ -42,13 +51,22 @@ export const AIChat = () => {
     const { preferences, setLanguage } = useUserPreferences();
     const { currentLang, setCurrentLang, translate, isTranslating, languages } = useTranslation();
     const [drawerOpen, setDrawerOpen] = useState(false);
-    const [messages, setMessages] = useState<ChatMessage[]>(() => {
-        const stored = localStorage.getItem('ai_chat_messages');
-        return stored ? JSON.parse(stored) : [];
-    });
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [showLangPicker, setShowLangPicker] = useState(false);
+    const [chatSessions, setChatSessions] = useState<ChatSession[]>(() => {
+        // Use user-specific key to isolate chat history per user
+        const userKey = `ai_chat_sessions_${user?.id || 'guest'}`;
+        const stored = localStorage.getItem(userKey);
+        return stored ? JSON.parse(stored) : [];
+    });
+    const [currentSessionId, setCurrentSessionId] = useState(() => {
+        // Use user-specific key to isolate session per user
+        const userKey = `ai_chat_current_session_id_${user?.id || 'guest'}`;
+        const stored = localStorage.getItem(userKey);
+        return stored || `session-${Date.now()}`;
+    });
     const chatEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const langPickerRef = useRef<HTMLDivElement>(null);
@@ -59,10 +77,56 @@ export const AIChat = () => {
     }, []);
     const { isListening, startListening, stopListening, isSupported: voiceSupported } = useVoiceSearch(handleVoiceResult);
 
-    // Persist messages
+    const getSessionTitle = useCallback((list: ChatMessage[]) => {
+        const firstUser = list.find(m => m.role === 'user');
+        if (!firstUser) return 'New chat';
+        const plain = firstUser.content.replace(/\s+/g, ' ').trim();
+        return plain.length > 42 ? `${plain.slice(0, 42)}...` : plain;
+    }, []);
+
+    // Keep the current chat session synced with live messages.
     useEffect(() => {
-        localStorage.setItem('ai_chat_messages', JSON.stringify(messages.slice(-50)));
-    }, [messages]);
+        // Do not persist empty chat state; this avoids overwriting previous
+        // saved sessions during initial page load/refresh.
+        if (!messages || messages.length === 0) return;
+
+        setChatSessions(prev => {
+            const idx = prev.findIndex(s => s.id === currentSessionId);
+            const nextSession: ChatSession = {
+                id: currentSessionId,
+                title: getSessionTitle(messages),
+                messages: messages.slice(-100),
+                updatedAt: Date.now(),
+            };
+
+            if (idx === -1) return [nextSession, ...prev].slice(0, 20);
+
+            const updated = [...prev];
+            updated[idx] = nextSession;
+            updated.sort((a, b) => b.updatedAt - a.updatedAt);
+            return updated.slice(0, 20);
+        });
+    }, [messages, currentSessionId, getSessionTitle]);
+
+    // Save chat sessions with user-specific key
+    useEffect(() => {
+        const userKey = `ai_chat_sessions_${user?.id || 'guest'}`;
+        localStorage.setItem(userKey, JSON.stringify(chatSessions));
+    }, [chatSessions, user?.id]);
+
+    // Save current session ID with user-specific key
+    useEffect(() => {
+        const userKey = `ai_chat_current_session_id_${user?.id || 'guest'}`;
+        localStorage.setItem(userKey, currentSessionId);
+    }, [currentSessionId, user?.id]);
+
+    // Reset chat when user changes (logout/login)
+    useEffect(() => {
+        const nextId = `session-${Date.now()}`;
+        setCurrentSessionId(nextId);
+        setMessages([]);
+        setInput('');
+    }, [user?.id]);
 
     useEffect(() => {
         const topic = searchParams.get('topic');
@@ -141,7 +205,7 @@ export const AIChat = () => {
             const res = await api.post('/chat/message', {
                 message: text,
                 history: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
-                language: currentLang,
+                language: 'en',
             });
 
             const aiContent = res.data?.data?.response || res.data?.response || res.data?.message || 'Hey! I got your message and I\'m here to help! What would you like to know more about? 😊';
@@ -155,10 +219,9 @@ export const AIChat = () => {
                 image: aiImage || undefined,
             };
 
-            // Backend already responds in the target language via Gemini,
-            // so store the response as the translated content directly.
+            // Keep canonical content in English so language switching remains reliable.
             if (currentLang !== 'en') {
-                aiMsg.translatedContent = aiContent;
+                aiMsg.translatedContent = await translate(aiContent);
                 aiMsg.translatedLang = currentLang;
             }
 
@@ -171,7 +234,8 @@ export const AIChat = () => {
                 `Yo${user?.name ? ` ${user.name}` : ''}! 🌟`,
                 `Hello${user?.name ? ` ${user.name}` : ' friend'}! ✨`,
             ];
-            const greeting = greetings[Math.floor(Math.random() * greetings.length)];
+            const isFirstMessage = messages.length === 0;
+            const greeting = isFirstMessage ? `${greetings[Math.floor(Math.random() * greetings.length)]} ` : '';
 
             const lowerText = text.toLowerCase();
             let response: string;
@@ -231,20 +295,19 @@ export const AIChat = () => {
         }
     };
 
-    const translateMessage = async (msg: ChatMessage) => {
-        if (currentLang === 'en') return;
-        // Re-translate if language changed or no translation exists
-        if (!msg.translatedContent || msg.translatedLang !== currentLang) {
-            const translated = await translate(msg.content);
-            setMessages(prev => prev.map(m =>
-                m.id === msg.id ? { ...m, translatedContent: translated, translatedLang: currentLang } : m
-            ));
-        }
+    const startNewChat = () => {
+        const nextId = `session-${Date.now()}`;
+        setCurrentSessionId(nextId);
+        setMessages([]);
+        setInput('');
     };
 
-    const clearChat = () => {
-        setMessages([]);
-        localStorage.removeItem('ai_chat_messages');
+    const openSession = (sessionId: string) => {
+        if (sessionId === currentSessionId) return;
+        const session = chatSessions.find(s => s.id === sessionId);
+        if (!session) return;
+        setCurrentSessionId(sessionId);
+        setMessages(session.messages || []);
     };
 
     const toggleLike = (id: string, type: 'like' | 'dislike') => {
@@ -256,6 +319,9 @@ export const AIChat = () => {
     };
 
     const currentLangObj = languages.find(l => l.code === currentLang);
+    const sortedSessions = [...chatSessions]
+        .filter(s => (s.messages || []).some(m => m.role === 'user'))
+        .sort((a, b) => b.updatedAt - a.updatedAt);
 
     return (
         <>
@@ -263,7 +329,43 @@ export const AIChat = () => {
             <Sidebar />
             <MobileDrawer isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
             <PageWrapper>
-                <div className="lg:ml-64 flex flex-col h-[calc(100vh-8rem)]">
+                <div className="lg:ml-64 flex h-[calc(100vh-8rem)] gap-4">
+                    <div className="hidden lg:flex w-72 flex-col rounded-2xl bg-white/55 backdrop-blur-sm border border-gray-100 p-3">
+                        <button
+                            onClick={startNewChat}
+                            className="w-full mb-3 px-3 py-2 rounded-xl bg-brand text-white text-sm font-medium hover:bg-brand/90 transition-colors"
+                        >
+                            + New chat
+                        </button>
+                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 mb-2">Chat History</h3>
+                        <div className="flex-1 overflow-y-auto space-y-1">
+                            {sortedSessions.length === 0 && (
+                                <p className="text-xs text-gray-400 px-2 py-2">No previous chats yet.</p>
+                            )}
+                            {sortedSessions.map(session => (
+                                <div key={session.id} className="group flex items-center gap-1">
+                                    <button
+                                        onClick={() => openSession(session.id)}
+                                        className={`flex-1 text-left px-3 py-2 rounded-lg text-xs transition-colors ${
+                                            session.id === currentSessionId
+                                                ? 'bg-brand/10 text-brand font-medium'
+                                                : 'text-gray-600 hover:bg-gray-100'
+                                        }`}
+                                        title={session.title || 'New chat'}
+                                    >
+                                        <div className="truncate">{session.title || 'New chat'}</div>
+                                        <div className="text-[10px] text-gray-400 mt-0.5">
+                                            {new Date(session.updatedAt).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' })}
+                                            {' • '}
+                                            {new Date(session.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </div>
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="flex-1 flex flex-col min-w-0">
                     {/* Header */}
                     <div className="flex items-center justify-between mb-4 flex-shrink-0">
                         <div>
@@ -313,13 +415,6 @@ export const AIChat = () => {
                                 </AnimatePresence>
                             </div>
 
-                            <button
-                                onClick={clearChat}
-                                className="p-2 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                                title="Clear chat"
-                            >
-                                <Trash2 className="w-4 h-4" />
-                            </button>
                         </div>
                     </div>
 
@@ -365,15 +460,24 @@ export const AIChat = () => {
                                             {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                                         </div>
                                         <div className={`max-w-[75%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                                            <div className={`px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap ${
+                                            <div className={`px-4 py-3 rounded-2xl text-sm ${
                                                 msg.role === 'user'
                                                     ? 'bg-brand text-white rounded-tr-md'
                                                     : 'bg-white border border-gray-100 text-gray-800 rounded-tl-md shadow-sm'
                                             }`}>
-                                                {msg.translatedContent && currentLang !== 'en'
-                                                    ? msg.translatedContent
-                                                    : msg.content
-                                                }
+                                                {msg.role === 'assistant' ? (
+                                                    <div className="prose prose-sm max-w-none prose-p:my-2 prose-pre:my-2 prose-pre:rounded-lg prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-code:text-pink-600 prose-li:my-0">
+                                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                            {msg.translatedContent && currentLang !== 'en'
+                                                                ? msg.translatedContent
+                                                                : msg.content}
+                                                        </ReactMarkdown>
+                                                    </div>
+                                                ) : (
+                                                    <div className="whitespace-pre-wrap">
+                                                        {msg.content}
+                                                    </div>
+                                                )}
                                                 {msg.image && (
                                                     <img
                                                         src={`data:image/png;base64,${msg.image}`}
@@ -385,13 +489,6 @@ export const AIChat = () => {
                                             {/* Message actions for AI messages */}
                                             {msg.role === 'assistant' && (
                                                 <div className="flex items-center gap-1 mt-1">
-                                                    <button
-                                                        onClick={() => translateMessage(msg)}
-                                                        className="p-1 text-gray-400 hover:text-blue-500 transition-colors"
-                                                        title="Translate"
-                                                    >
-                                                        <Languages className="w-3.5 h-3.5" />
-                                                    </button>
                                                     <button
                                                         onClick={() => toggleLike(msg.id, 'like')}
                                                         className={`p-1 transition-colors ${msg.liked ? 'text-green-500' : 'text-gray-400 hover:text-green-500'}`}
@@ -500,6 +597,7 @@ export const AIChat = () => {
                             </div>
                         </GlassCard>
                     </div>
+                </div>
                 </div>
             </PageWrapper>
         </>

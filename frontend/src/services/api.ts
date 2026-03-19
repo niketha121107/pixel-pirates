@@ -122,6 +122,8 @@ export const usersAPI = {
     updateProfile: (data: object) => api.put('/users/profile', data),
     stats: () => api.get('/users/stats'),
     analytics: (userId: string) => api.get(`/users/${userId}/analytics`),
+    getMockTestIntegrity: () => api.get('/users/mock-test-integrity'),
+    reportMockTestViolation: (reason: string) => api.post('/users/mock-test-integrity', { reason }),
 };
 // ── Notes ────────────────────────────────────────────────────────
 export const notesAPI = {

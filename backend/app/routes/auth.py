@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from datetime import datetime, timedelta
 from typing import Dict, Any
 from app.models import UserLogin, UserCreate, UserResponse, AuthToken, SuccessResponse, ErrorResponse
-from app.data import get_user_by_email, get_user_by_id, MOCK_USERS, MOCK_TOPICS, create_user
+from app.data import get_user_by_email, get_user_by_id, MOCK_USERS, MOCK_TOPICS, create_user, get_mock_test_integrity_status
 from app.core.auth import auth_utils, get_current_user_from_token
 from app.core.config import settings
 import uuid
@@ -26,6 +26,18 @@ async def login(credentials: UserLogin):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
+
+    integrity_status = get_mock_test_integrity_status(user["id"])
+    if integrity_status["isSuspended"]:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail={
+                "message": "Your account is suspended for 2 hours because of repeated mock test violations.",
+                "suspendedUntil": integrity_status["suspendedUntil"],
+                "warnings": integrity_status["warnings"],
+                "maxWarnings": integrity_status["maxWarnings"],
+            },
+        )
     
     # Create access token
     access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -36,6 +48,8 @@ async def login(credentials: UserLogin):
     
     # Prepare user response (without password)
     user_data = {k: v for k, v in user.items() if k != "password"}
+    user_data.setdefault("antiCheatWarnings", 0)
+    user_data.setdefault("suspendedUntil", None)
     user_data.setdefault("createdAt", None)
     user_data.setdefault("updatedAt", None)
     user_response = UserResponse(**user_data)
@@ -71,6 +85,8 @@ async def signup(user_data: UserCreate):
     
     # Prepare user response (without password)
     user_resp = {k: v for k, v in new_user.items() if k != "password"}
+    user_resp.setdefault("antiCheatWarnings", 0)
+    user_resp.setdefault("suspendedUntil", None)
     user_resp.setdefault("createdAt", None)
     user_resp.setdefault("updatedAt", None)
     user_response = UserResponse(**user_resp)
@@ -95,6 +111,8 @@ async def get_current_user(current_user: dict = Depends(get_current_user_from_to
     """Get current authenticated user"""
     # Return user without password
     user_data = {k: v for k, v in current_user.items() if k != "password"}
+    user_data.setdefault("antiCheatWarnings", 0)
+    user_data.setdefault("suspendedUntil", None)
     user_data.setdefault("createdAt", None)
     user_data.setdefault("updatedAt", None)
     return UserResponse(**user_data)
@@ -113,6 +131,8 @@ async def refresh_token(current_user: dict = Depends(get_current_user_from_token
     
     # Prepare user response
     user_data = {k: v for k, v in user.items() if k != "password"}
+    user_data.setdefault("antiCheatWarnings", 0)
+    user_data.setdefault("suspendedUntil", None)
     user_data.setdefault("createdAt", None)
     user_data.setdefault("updatedAt", None)
     user_response = UserResponse(**user_data)

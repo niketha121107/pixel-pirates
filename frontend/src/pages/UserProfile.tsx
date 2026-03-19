@@ -9,6 +9,7 @@ import { Sidebar } from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
 import { ProfileAvatar } from '../components/profile/ProfileAvatar';
 import { WallpaperSettings } from '../components/profile/WallpaperSettings';
+import { LanguageSettings } from '../components/profile/LanguageSettings';
 import type { WallpaperOption } from '../components/profile/WallpaperSettings';
 import { MotivationalQuotes } from '../components/profile/MotivationalQuotes';
 import { useUserPreferences } from '../context/UserPreferencesContext';
@@ -135,6 +136,11 @@ export const UserProfile = () => {
 
     const handleWallpaperChange = (wp: WallpaperOption) => {
         setPendingWallpaper(wp.id);
+    };
+
+    const handleLanguageChange = (langCode: string) => {
+        // Language preference can be saved to localStorage directly
+        localStorage.setItem('preferredLanguage', langCode);
     };
 
     return (
@@ -339,74 +345,16 @@ export const UserProfile = () => {
                     </motion.div>
 
                     {/* ═══ Stats Row ═══ */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 }}
-                        className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3"
-                    >
-                        {[
-                            { label: 'Topics Done', value: USER_STATS.topicsCompleted, icon: <BookOpen className="w-4 h-4" />, color: 'text-brand', bg: 'bg-brand/10' },
-                            { label: 'Avg Score', value: `${USER_STATS.avgScore}%`, icon: <Target className="w-4 h-4" />, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-                            { label: 'Day Streak', value: USER_STATS.streak, icon: <Flame className="w-4 h-4" />, color: 'text-orange-600', bg: 'bg-orange-50' },
-                            { label: 'Study Hours', value: USER_STATS.totalHours, icon: <Clock className="w-4 h-4" />, color: 'text-blue-600', bg: 'bg-blue-50' },
-                            { label: 'Quizzes', value: USER_STATS.quizzesTaken, icon: <CheckCircle2 className="w-4 h-4" />, color: 'text-purple-600', bg: 'bg-purple-50' },
-                            { label: 'Rank', value: `#${USER_STATS.rank}`, icon: <Trophy className="w-4 h-4" />, color: 'text-yellow-600', bg: 'bg-yellow-50' },
-                        ].map((stat) => (
-                            <GlassCard key={stat.label} className="p-4" interactive>
-                                <div className={`w-8 h-8 rounded-lg ${stat.bg} flex items-center justify-center ${stat.color} mb-2`}>
-                                    {stat.icon}
-                                </div>
-                                <p className="text-xl font-bold text-gray-800">{stat.value}</p>
-                                <p className="text-[11px] text-gray-500 font-medium">{stat.label}</p>
-                            </GlassCard>
-                        ))}
-                    </motion.div>
+                    {/* Stats removed as per user request */}
 
                     {/* ═══ Two Column Layout ═══ */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         {/* Left Column: Badges + Language Skills */}
                         <div className="lg:col-span-1 space-y-6">
-                            {/* Badges */}
-                            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-                                <GlassCard className="p-6">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-400 to-amber-400 flex items-center justify-center">
-                                            <Award className="w-5 h-5 text-white" />
-                                        </div>
-                                        <div>
-                                            <h3 className="font-bold text-gray-800">Badges</h3>
-                                            <p className="text-xs text-gray-500">{USER_STATS.badges.filter(b => b.earned).length}/{USER_STATS.badges.length} earned</p>
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-4 gap-2">
-                                        {USER_STATS.badges.map((badge) => (
-                                            <motion.div
-                                                key={badge.name}
-                                                whileHover={{ scale: 1.1, y: -2 }}
-                                                className={`flex flex-col items-center p-2 rounded-xl transition-all ${
-                                                    badge.earned
-                                                        ? 'bg-yellow-50 border border-yellow-200'
-                                                        : 'bg-gray-50 border border-gray-200 opacity-40 grayscale'
-                                                }`}
-                                                title={badge.name}
-                                            >
-                                                <span className="text-2xl">{badge.icon}</span>
-                                                <span className="text-[9px] text-gray-600 font-medium mt-1 text-center leading-tight">{badge.name}</span>
-                                            </motion.div>
-                                        ))}
-                                    </div>
-                                </GlassCard>
-                            </motion.div>
-
-
-
                             {/* Motivational Quotes */}
                             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
                                 <MotivationalQuotes streak={USER_STATS.streak} />
                             </motion.div>
-
-
                         </div>
 
                         {/* Right Column: Notes + Wallpaper */}
@@ -414,6 +362,11 @@ export const UserProfile = () => {
                             {/* Wallpaper Settings */}
                             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
                                 <WallpaperSettings currentWallpaper={pendingWallpaper} onWallpaperChange={handleWallpaperChange} />
+                            </motion.div>
+
+                            {/* Language Settings */}
+                            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+                                <LanguageSettings currentLanguage={preferences.language} onLanguageChange={handleLanguageChange} />
                             </motion.div>
                         </div>
                     </div>

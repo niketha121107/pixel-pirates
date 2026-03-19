@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, status
 from typing import List, Dict, Any
-from app.models import User, UserUpdate, UserStats, SuccessResponse
-from app.data import get_user_by_id, MOCK_USERS
+from app.models import User, UserUpdate, UserStats, SuccessResponse, MockTestViolationIn
+from app.data import get_user_by_id, MOCK_USERS, get_mock_test_integrity_status, register_mock_test_violation
 from app.core.auth import get_current_user_from_token
 
 router = APIRouter()
@@ -11,6 +11,8 @@ async def get_user_profile(current_user: dict = Depends(get_current_user_from_to
     """Get current user profile"""
     # Remove password from response
     user_data = {k: v for k, v in current_user.items() if k != "password"}
+    user_data.setdefault("antiCheatWarnings", 0)
+    user_data.setdefault("suspendedUntil", None)
     
     return SuccessResponse(
         success=True,
@@ -56,6 +58,31 @@ async def update_user_profile(
         success=True,
         message="Profile updated successfully",
         data={"user": user_data}
+    )
+
+
+@router.get("/mock-test-integrity", response_model=SuccessResponse)
+async def get_mock_test_integrity(current_user: dict = Depends(get_current_user_from_token)):
+    """Get current user's mock test warning/suspension state."""
+    status_data = get_mock_test_integrity_status(current_user["id"])
+    return SuccessResponse(
+        success=True,
+        message="Mock test integrity status retrieved successfully",
+        data=status_data,
+    )
+
+
+@router.post("/mock-test-integrity", response_model=SuccessResponse)
+async def report_mock_test_violation(
+    violation: MockTestViolationIn,
+    current_user: dict = Depends(get_current_user_from_token),
+):
+    """Record a prohibited action during a mock test."""
+    result = register_mock_test_violation(current_user["id"], violation.reason)
+    return SuccessResponse(
+        success=True,
+        message=result["message"],
+        data=result,
     )
 
 @router.get("/stats", response_model=SuccessResponse)

@@ -8,12 +8,13 @@ import { MobileDrawer } from '../components/layout/MobileDrawer';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GradientButton } from '../components/ui/GradientButton';
 import { useAntiCheat } from '../context/AntiCheatContext';
+import { useAuth } from '../context/AuthContext';
 import { motion } from 'framer-motion';
 import { sanitizeMojibakeText } from '../lib/text';
 import {
     ClipboardList, CheckCircle2, XCircle, Clock, AlertTriangle,
-    ArrowRight, ArrowLeft, Home, Trophy, RotateCcw, Shield, Loader2,
-    PenLine, List, MessageSquare
+    ArrowRight, ArrowLeft, Trophy, Shield, Loader2,
+    PenLine, List, MessageSquare, BarChart3
 } from 'lucide-react';
 
 type QuestionType = 'mcq' | 'fillup' | 'written';
@@ -229,6 +230,7 @@ const SAMPLE_QUESTIONS: MockQuestion[] = [
 export const MockTest = () => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
+    const { user } = useAuth();
     const topicId = searchParams.get('topicId') || '';
     const subtopicId = searchParams.get('subtopicId') || '';
     const isTopicContextTest = Boolean(topicId);
@@ -243,6 +245,7 @@ export const MockTest = () => {
     const [totalTime, setTotalTime] = useState(0);
     const [score, setScore] = useState(0);
     const [loading, setLoading] = useState(false);
+    const [testAlreadyCompleted, setTestAlreadyCompleted] = useState(false);
 
     // Setup options
     const [questionCount, setQuestionCount] = useState(isTopicContextTest ? 5 : 10);
@@ -255,7 +258,24 @@ export const MockTest = () => {
         if (!isTopicContextTest) return;
         setQuestionCount(5);
         setSelectedTypes(['mcq']);
-    }, [isTopicContextTest]);
+
+        // Check if test already completed for this topic
+        if (user?.id && topicId) {
+            const resultsKey = `edutwin-mock-results_${user.id}`;
+            const stored = localStorage.getItem(resultsKey);
+            if (stored) {
+                try {
+                    const results = JSON.parse(stored);
+                    const existingResult = results.find((r: any) => r.topicId === topicId || r.topic === topicId);
+                    if (existingResult) {
+                        setTestAlreadyCompleted(true);
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            }
+        }
+    }, [isTopicContextTest, user?.id, topicId]);
 
     // Timer
     useEffect(() => {
@@ -440,7 +460,9 @@ export const MockTest = () => {
         const max = questions.reduce((sum, q) => sum + q.points, 0);
         const percentage = max > 0 ? Math.round((total / max) * 100) : 0;
 
-        const stored = localStorage.getItem('edutwin-mock-results');
+        // Use user-specific key to isolate test results per user
+        const userKey = `edutwin-mock-results_${user?.id || 'guest'}`;
+        const stored = localStorage.getItem(userKey);
         const results = stored ? JSON.parse(stored) : [];
         results.unshift({
             id: Date.now().toString(),
@@ -456,7 +478,7 @@ export const MockTest = () => {
             timeTakenSec: totalTime - timeLeft,
             createdAt: new Date().toISOString(),
         });
-        localStorage.setItem('edutwin-mock-results', JSON.stringify(results.slice(0, 200)));
+        localStorage.setItem(userKey, JSON.stringify(results.slice(0, 200)));
 
         if (topicId && percentage >= 70) {
             topicsAPI.updateStatus(topicId, { status: 'completed', score: percentage }).catch(() => {});
@@ -498,6 +520,39 @@ export const MockTest = () => {
             <MobileDrawer isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
             <PageWrapper>
                 <div className="lg:ml-64">
+                    {/* Test Already Completed Warning */}
+                    {isTopicContextTest && testAlreadyCompleted && (
+                        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="py-12 px-4">
+                            <GlassCard className="p-8 text-center max-w-md mx-auto border-2 border-yellow-300 bg-yellow-50">
+                                <AlertTriangle className="w-16 h-16 text-yellow-600 mx-auto mb-4" />
+                                <h2 className="text-2xl font-bold text-yellow-900 mb-2">Test Already Completed</h2>
+                                <p className="text-yellow-800 mb-4">
+                                    You have already completed the mock test for this topic. Only one attempt is allowed per topic to ensure fair assessment.
+                                </p>
+                                <p className="text-sm text-yellow-700 mb-6">
+                                    Your final result has been recorded and cannot be retaken.
+                                </p>
+                                <div className="flex flex-col gap-2">
+                                    <button
+                                        onClick={() => navigate(`/topic?id=${topicId}`)}
+                                        className="px-6 py-2.5 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors"
+                                    >
+                                        Back to Topic
+                                    </button>
+                                    <button
+                                        onClick={() => navigate('/mock-test-results')}
+                                        className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors"
+                                    >
+                                        View Results
+                                    </button>
+                                </div>
+                            </GlassCard>
+                        </motion.div>
+                    )}
+
+                    {/* Normal test flow */}
+                    {!testAlreadyCompleted && (
+                    <>
                     {/* Setup Mode */}
                     {mode === 'setup' && !isTopicContextTest && (
                         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
@@ -513,20 +568,46 @@ export const MockTest = () => {
                                 </p>
                             </div>
 
-                            {/* Anti-cheat notice */}
-                            <GlassCard className="p-4 mb-6 border-l-4 border-l-amber-400 bg-amber-50/50 select-none cursor-default">
-                                <div className="flex items-start gap-3">
-                                    <Shield className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                        <h3 className="font-semibold text-amber-800 text-sm">Test Integrity Rules</h3>
-                                        <ul className="text-xs text-amber-700 mt-1 space-y-1">
-                                            <li>• Copy, paste, and cut are disabled during the test</li>
-                                            <li>• Screenshots and screen recording are not allowed</li>
-                                            <li>• Switching tabs will trigger a warning</li>
-                                            <li>• Right-click context menu is disabled</li>
-                                            <li>• After {maxWarnings} warnings, your account will be suspended until the next day</li>
-                                            <li>• Current warnings: <span className="font-bold">{warnings}/{maxWarnings}</span></li>
-                                        </ul>
+                            {/* Anti-cheat notice - PROMINENT RULES */}
+                            <GlassCard className="p-6 mb-6 border-2 border-red-400 bg-red-50 shadow-lg">
+                                <div className="flex items-start gap-4">
+                                    <Shield className="w-7 h-7 text-red-600 mt-0.5 flex-shrink-0" />
+                                    <div className="flex-1">
+                                        <h3 className="font-bold text-red-900 text-lg mb-3">⚠️ MOCK TEST INTEGRITY RULES</h3>
+                                        <div className="space-y-3">
+                                            <div>
+                                                <p className="font-semibold text-red-800 text-sm mb-1">SCREENSHOTS & SCREEN RECORDING</p>
+                                                <ul className="text-xs text-red-700 space-y-0.5 ml-4">
+                                                    <li>❌ PrintScreen key is disabled</li>
+                                                    <li>❌ Shift+PrintScreen is disabled</li>
+                                                    <li>❌ Windows+Shift+S (Snipping Tool) is disabled</li>
+                                                    <li>❌ Screen recording of any kind is not allowed</li>
+                                                </ul>
+                                            </div>
+                                            <div>
+                                                <p className="font-semibold text-red-800 text-sm mb-1">COPY, PASTE & TEXT SHORTCUTS</p>
+                                                <ul className="text-xs text-red-700 space-y-0.5 ml-4">
+                                                    <li>❌ Ctrl+C (Copy) is disabled</li>
+                                                    <li>❌ Ctrl+V (Paste) is disabled</li>
+                                                    <li>❌ Ctrl+X (Cut) is disabled</li>
+                                                    <li>❌ Ctrl+A (Select All) is disabled</li>
+                                                </ul>
+                                            </div>
+                                            <div>
+                                                <p className="font-semibold text-red-800 text-sm mb-1">OTHER RESTRICTIONS</p>
+                                                <ul className="text-xs text-red-700 space-y-0.5 ml-4">
+                                                    <li>❌ Right-click context menu is disabled</li>
+                                                    <li>❌ Developer Tools (F12, F11) access is blocked</li>
+                                                    <li>❌ Tab switching will trigger a warning</li>
+                                                    <li>❌ Text selection within the test is restricted</li>
+                                                </ul>
+                                            </div>
+                                            <div className="mt-3 p-3 bg-red-100 rounded-lg border border-red-300">
+                                                <p className="font-bold text-red-900 text-sm">⛔ CONSEQUENCES:</p>
+                                                <p className="text-xs text-red-800 mt-1">After <span className="font-bold text-red-900">{maxWarnings} warnings</span>, your account will be <span className="font-bold text-red-900">SUSPENDED FOR 5 HOURS</span></p>
+                                                <p className="text-xs text-red-700 mt-2">Current warnings: <span className="font-bold text-lg text-red-900">{warnings}/{maxWarnings}</span></p>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </GlassCard>
@@ -803,6 +884,15 @@ export const MockTest = () => {
                     {/* Review Mode */}
                     {mode === 'review' && (
                         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+                            {/* Test Completed Badge */}
+                            <div className="mb-6 bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
+                                <CheckCircle2 className="w-6 h-6 text-green-600 flex-shrink-0" />
+                                <div>
+                                    <h3 className="font-semibold text-green-900">Test Completed Successfully!</h3>
+                                    <p className="text-sm text-green-700">Your answers have been submitted and evaluated.</p>
+                                </div>
+                            </div>
+
                             {/* Score Card */}
                             <GlassCard className="p-8 text-center mb-8">
                                 <Trophy className={`w-16 h-16 mx-auto mb-4 ${
@@ -836,16 +926,10 @@ export const MockTest = () => {
 
                                 <div className="flex gap-3 justify-center mt-6 flex-wrap">
                                     <button
-                                        onClick={() => navigate('/mock-test')}
-                                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 font-medium text-sm transition-colors"
+                                        onClick={() => navigate('/mock-test-results')}
+                                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand text-white hover:bg-brand/90 font-medium text-sm transition-colors"
                                     >
-                                        <ArrowLeft className="w-4 h-4" /> Back
-                                    </button>
-                                    <button
-                                        onClick={() => { setMode('setup'); setQuestions([]); setAnswers({}); }}
-                                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand/10 text-brand hover:bg-brand/20 font-medium text-sm transition-colors"
-                                    >
-                                        <RotateCcw className="w-4 h-4" /> Retry
+                                        <BarChart3 className="w-4 h-4" /> View Results
                                     </button>
                                     {topicFilter && (
                                         <button
@@ -855,12 +939,6 @@ export const MockTest = () => {
                                             <ArrowLeft className="w-4 h-4" /> Back to Topic
                                         </button>
                                     )}
-                                    <button
-                                        onClick={() => navigate('/videos')}
-                                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 font-medium text-sm transition-colors"
-                                    >
-                                        <Home className="w-4 h-4" /> All Topics
-                                    </button>
                                 </div>
                             </GlassCard>
 
@@ -904,6 +982,8 @@ export const MockTest = () => {
                                 })}
                             </div>
                         </motion.div>
+                    )}
+                    </>
                     )}
                 </div>
             </PageWrapper>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { Navbar } from '../components/layout/Navbar';
@@ -6,19 +6,33 @@ import { Sidebar } from '../components/layout/Sidebar';
 import { MobileDrawer } from '../components/layout/MobileDrawer';
 import { NoteSection } from '../components/profile/NoteSection';
 import type { Note } from '../components/profile/NoteSection';
+import { useAuth } from '../context/AuthContext';
 import { StickyNote } from 'lucide-react';
 
 export const Notes = () => {
     const [drawerOpen, setDrawerOpen] = useState(false);
+    const { user } = useAuth();
     const [notes, setNotes] = useState<Note[]>(() => {
-        const stored = localStorage.getItem('edutwin-notes');
+        // Use user-specific key to isolate notes per user
+        const userKey = `edutwin-notes_${user?.id || 'guest'}`;
+        const stored = localStorage.getItem(userKey);
         return stored ? JSON.parse(stored) : [];
     });
 
     const handleNotesChange = (updatedNotes: Note[]) => {
         setNotes(updatedNotes);
-        localStorage.setItem('edutwin-notes', JSON.stringify(updatedNotes));
+        // Use user-specific key to isolate notes per user
+        const userKey = `edutwin-notes_${user?.id || 'guest'}`;
+        localStorage.setItem(userKey, JSON.stringify(updatedNotes));
     };
+
+    // Reload notes when user changes (login/logout)
+    useEffect(() => {
+        const userKey = `edutwin-notes_${user?.id || 'guest'}`;
+        const stored = localStorage.getItem(userKey);
+        const loadedNotes = stored ? JSON.parse(stored) : [];
+        setNotes(loadedNotes);
+    }, [user?.id]);
 
     return (
         <>

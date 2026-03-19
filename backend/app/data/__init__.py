@@ -7,9 +7,12 @@ Every write function also persists the change to MongoDB.
 
 from typing import List, Dict, Any, Optional
 import logging, pymongo
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
+
+MAX_MOCK_TEST_WARNINGS = 10
+MOCK_TEST_SUSPENSION_HOURS = 2
 
 # ── In-memory caches (populated from MongoDB on startup) ────────
 MOCK_USERS: Dict[str, dict] = {}
@@ -112,13 +115,17 @@ def get_mock_data():
 
 def get_user_by_id(user_id: str):
     _ensure_cache_loaded(require_users=True)
-    return MOCK_USERS.get(user_id)
+    user = MOCK_USERS.get(user_id)
+    if user:
+        normalize_mock_test_integrity_state(user, persist=True)
+    return user
 
 
 def get_user_by_email(email: str):
     _ensure_cache_loaded(require_users=True)
     for user in MOCK_USERS.values():
         if user["email"] == email:
+            normalize_mock_test_integrity_state(user, persist=True)
             return user
     return None
 
@@ -220,6 +227,8 @@ def create_user(email: str, name: str, hashed_password: str) -> str:
         "rank": len(MOCK_USERS) + 1,
         "preferredStyle": "visual",
         "confusionCount": 0,
+        "antiCheatWarnings": 0,
+        "suspendedUntil": None,
         "createdAt": datetime.now().strftime("%Y-%m-%d"),
         "quizScores": {},
         "streak": 0,
@@ -258,6 +267,93 @@ def update_user_in_db(user_id: str, updates: dict) -> bool:
         user[key] = value
     _persist_user(user_id)
     return True
+
+
+def normalize_mock_test_integrity_state(user: dict, persist: bool = False) -> dict:
+    """Ensure anti-cheat fields exist and clear expired suspensions."""
+    changed = False
+
+    if "antiCheatWarnings" not in user:
+        user["antiCheatWarnings"] = 0
+        changed = True
+
+    if "suspendedUntil" not in user:
+        user["suspendedUntil"] = None
+        changed = True
+
+    suspended_until = user.get("suspendedUntil")
+    if suspended_until:
+        try:
+            suspended_until_dt = datetime.fromisoformat(suspended_until)
+        except ValueError:
+            user["suspendedUntil"] = None
+            user["antiCheatWarnings"] = 0
+            changed = True
+        else:
+            if suspended_until_dt <= datetime.utcnow():
+                user["suspendedUntil"] = None
+                user["antiCheatWarnings"] = 0
+                changed = True
+
+    if changed and persist:
+        _persist_user(user["id"])
+
+    return user
+
+
+def get_mock_test_integrity_status(user_id: str) -> dict:
+    user = get_user_by_id(user_id)
+    if not user:
+        return {
+            "warnings": 0,
+            "maxWarnings": MAX_MOCK_TEST_WARNINGS,
+            "isSuspended": False,
+            "suspendedUntil": None,
+        }
+
+    normalize_mock_test_integrity_state(user, persist=True)
+    suspended_until = user.get("suspendedUntil")
+    return {
+        "warnings": int(user.get("antiCheatWarnings", 0)),
+        "maxWarnings": MAX_MOCK_TEST_WARNINGS,
+        "isSuspended": bool(suspended_until),
+        "suspendedUntil": suspended_until,
+    }
+
+
+def register_mock_test_violation(user_id: str, reason: str) -> dict:
+    user = get_user_by_id(user_id)
+    if not user:
+        raise ValueError("User not found")
+
+    normalize_mock_test_integrity_state(user, persist=False)
+
+    new_count = int(user.get("antiCheatWarnings", 0)) + 1
+    user["antiCheatWarnings"] = new_count
+
+    is_suspended = new_count > MAX_MOCK_TEST_WARNINGS
+    suspension_message = None
+
+    if is_suspended:
+        suspended_until = (datetime.utcnow() + timedelta(hours=MOCK_TEST_SUSPENSION_HOURS)).replace(microsecond=0)
+        user["suspendedUntil"] = suspended_until.isoformat()
+        suspension_message = (
+            f"Account suspended for {MOCK_TEST_SUSPENSION_HOURS} hours after repeated prohibited actions during the mock test."
+        )
+
+    _persist_user(user_id)
+
+    return {
+        "warnings": new_count,
+        "maxWarnings": MAX_MOCK_TEST_WARNINGS,
+        "isSuspended": is_suspended,
+        "suspendedUntil": user.get("suspendedUntil"),
+        "reason": reason,
+        "message": suspension_message or (
+            f"Warning {new_count}/{MAX_MOCK_TEST_WARNINGS}: {reason}. "
+            f"{MAX_MOCK_TEST_WARNINGS - new_count} warnings remaining before a 2-hour suspension."
+        ),
+    }
 
 
 def user_exists(email: str) -> bool:

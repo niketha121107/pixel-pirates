@@ -261,13 +261,13 @@ export const QuizPage = () => {
     const score = totalQuestions > 0 ? answers.filter((a, i) => a === questions[i]?.correctIdx).length : 0;
     const percentage = totalQuestions > 0 ? Math.round((score / totalQuestions) * 100) : 0;
 
-    const handleRetry = () => {
-        setCurrentQ(0);
-        setAnswers(Array(totalQuestions).fill(null));
-        setSelectedAnswer(null);
-        setShowResult(false);
-        setFeedbackState('idle');
-    };
+    // const handleRetry = () => {
+    //     setCurrentQ(0);
+    //     setAnswers(Array(totalQuestions).fill(null));
+    //     setSelectedAnswer(null);
+    //     setShowResult(false);
+    //     setFeedbackState('idle');
+    // };
 
     // Loading state
     if (loading) {

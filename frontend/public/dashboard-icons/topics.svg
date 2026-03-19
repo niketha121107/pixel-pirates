@@ -1,0 +1,16 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Bottom folder (Purple) -->
+  <path d="M 50 110 L 50 160 Q 50 168 58 168 L 160 168 Q 168 168 168 160 L 168 120 Q 168 112 160 112 L 100 112 L 90 100 Q 88 98 86 98 L 58 98 Q 50 98 50 106 Z" 
+        fill="#9B8BC4" stroke="#7B6BA4" stroke-width="1.5"/>
+  
+  <!-- Middle folder (Blue) -->
+  <path d="M 45 75 L 45 120 Q 45 128 53 128 L 155 128 Q 163 128 163 120 L 163 90 Q 163 82 155 82 L 105 82 L 95 70 Q 93 68 91 68 L 53 68 Q 45 68 45 76 Z" 
+        fill="#A8C5E0" stroke="#8AABCE" stroke-width="1.5"/>
+  
+  <!-- Top folder (Tan/Orange) -->
+  <path d="M 40 40 L 40 85 Q 40 93 48 93 L 150 93 Q 158 93 158 85 L 158 55 Q 158 47 150 47 L 100 47 L 90 35 Q 88 33 86 33 L 48 33 Q 40 33 40 41 Z" 
+        fill="#D8A574" stroke="#C89B6B" stroke-width="1.5"/>
+  
+  <!-- Folder tab on top folder -->
+  <rect x="42" y="30" width="25" height="8" rx="2" fill="#C89B6B" stroke="#B88B5C" stroke-width="1"/>
+</svg>

@@ -17,6 +17,8 @@ class User(BaseModel):
     rank: int = Field(default=0)
     preferred_style: str = Field(default="visual", alias="preferredStyle")
     confusion_count: int = Field(default=0, alias="confusionCount")
+    anti_cheat_warnings: int = Field(default=0, alias="antiCheatWarnings")
+    suspended_until: Optional[str] = Field(default=None, alias="suspendedUntil")
     created_at: Optional[str] = Field(default=None, alias="createdAt")
     updated_at: Optional[str] = Field(default=None, alias="updatedAt")
     
@@ -36,6 +38,8 @@ class UserResponse(BaseModel):
     rank: int
     preferred_style: str = Field(alias="preferredStyle")
     confusion_count: int = Field(alias="confusionCount")
+    anti_cheat_warnings: int = Field(default=0, alias="antiCheatWarnings")
+    suspended_until: Optional[str] = Field(default=None, alias="suspendedUntil")
     created_at: Optional[str] = Field(alias="createdAt")
     updated_at: Optional[str] = Field(alias="updatedAt")
     
@@ -67,6 +71,20 @@ class AuthToken(BaseModel):
     token_type: str = "bearer"
     expires_in: int  # seconds
     user: UserResponse
+
+
+class MockTestViolationIn(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=200)
+
+
+class MockTestIntegrityStatus(BaseModel):
+    warnings: int
+    max_warnings: int = Field(alias="maxWarnings")
+    is_suspended: bool = Field(alias="isSuspended")
+    suspended_until: Optional[str] = Field(default=None, alias="suspendedUntil")
+
+    class Config:
+        populate_by_name = True
 
 # Topic Models
 class ExplanationStyle(str, Enum):

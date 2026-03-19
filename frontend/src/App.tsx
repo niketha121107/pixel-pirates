@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { SignIn } from './pages/SignIn';
 import { SignUp } from './pages/SignUp';
+import { Dashboard } from './pages/Dashboard';
 import { TopicView } from './pages/TopicView';
 import { QuizPage } from './pages/QuizPage';
 import { Analytics } from './pages/Analytics';
@@ -9,6 +10,7 @@ import { Progress } from './pages/Progress';
 import { UserProfile } from './pages/UserProfile';
 import { VideoRecommendations } from './pages/VideoRecommendations';
 import { MockTest } from './pages/MockTest';
+import { MockTestResults } from './pages/MockTestResults';
 import { AIChat } from './pages/AIChat';
 import { Notes } from './pages/Notes';
 import { PDFViewer } from './pages/PDFViewer';
@@ -17,6 +19,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 function AppRoutes() {
   const location = useLocation();
+  const isAuthenticated = Boolean(localStorage.getItem('access_token'));
 
   useEffect(() => {
     const allowSelectionPaths = ['/study-material', '/pdf-viewer'];
@@ -35,8 +38,10 @@ function AppRoutes() {
 
   return (
     <Routes>
+      <Route path="/" element={<Navigate to={isAuthenticated ? '/dashboard' : '/signin'} replace />} />
       <Route path="/signin" element={<SignIn />} />
       <Route path="/signup" element={<SignUp />} />
+      <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
       <Route path="/topic" element={<ProtectedRoute><TopicView /></ProtectedRoute>} />
       <Route path="/quiz" element={<ProtectedRoute><QuizPage /></ProtectedRoute>} />
@@ -45,12 +50,13 @@ function AppRoutes() {
       <Route path="/notes" element={<ProtectedRoute><Notes /></ProtectedRoute>} />
       <Route path="/videos" element={<ProtectedRoute><VideoRecommendations /></ProtectedRoute>} />
       <Route path="/mock-test" element={<ProtectedRoute><MockTest /></ProtectedRoute>} />
+      <Route path="/mock-test-results" element={<ProtectedRoute><MockTestResults /></ProtectedRoute>} />
       <Route path="/chat" element={<ProtectedRoute><AIChat /></ProtectedRoute>} />
       <Route path="/pdf-viewer" element={<ProtectedRoute><PDFViewer /></ProtectedRoute>} />
       <Route path="/study-material" element={<ProtectedRoute><StudyMaterial /></ProtectedRoute>} />
 
-      {/* Default: authenticated users go to profile, others to signin */}
-      <Route path="*" element={<Navigate to="/signin" replace />} />
+      {/* Default: authenticated users go to dashboard, others to signin */}
+      <Route path="*" element={<Navigate to={isAuthenticated ? '/dashboard' : '/signin'} replace />} />
     </Routes>
   );
 }

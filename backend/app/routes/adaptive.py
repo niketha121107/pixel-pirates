@@ -3,7 +3,7 @@ Adaptive Learning Routes — Uses Gemini 2.5 Flash to analyze user performance
 and dynamically adjust explanations, quizzes, and recommendations.
 """
 
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Query
 from pydantic import BaseModel
 from typing import Optional
 from app.models import SuccessResponse
@@ -76,6 +76,7 @@ async def analyze_user_for_topic(
 @router.get("/explanation/{topic_id}", response_model=SuccessResponse)
 async def get_adaptive_explanation(
     topic_id: str,
+    language: Optional[str] = Query("en", description="Language code: en, hi, es, fr, de, etc."),
     current_user: dict = Depends(get_current_user_from_token),
 ):
     """Generate a personalized explanation adapted to the user's performance level using Gemini 2.5 Flash."""
@@ -119,6 +120,7 @@ async def get_adaptive_explanation(
             user_preferred_style=style,
             difficulty_level=topic["difficulty"],
             additional_context=additional,
+            language=language or "en"
         )
     except Exception:
         explanation = topic.get("overview", "Explanation unavailable.")

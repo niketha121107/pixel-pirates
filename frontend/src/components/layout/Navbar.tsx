@@ -62,7 +62,7 @@ export const Navbar = ({ onMenuClick }: { onMenuClick: () => void }) => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                     </svg>
                 </button>
-                <Link to="/profile" className="text-2xl font-bold tracking-tighter">
+                <Link to="/dashboard" className="text-2xl font-bold tracking-tighter">
                     <span className="text-gradient hover:opacity-80 transition-opacity cursor-pointer">EduTwin</span>
                 </Link>
             </div>

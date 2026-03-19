@@ -1,0 +1,38 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Checklist clipboard body -->
+  <rect x="35" y="40" width="85" height="120" rx="12" fill="#C5D5E8" stroke="#9FB3D1" stroke-width="2"/>
+  
+  <!-- Clipboard clip -->
+  <rect x="55" y="35" width="15" height="12" rx="3" fill="#B8860B" stroke="#8B6914" stroke-width="1"/>
+  
+  <!-- Checkboxes and checks -->
+  <!-- Item 1 -->
+  <rect x="45" y="55" width="12" height="12" rx="2" fill="#90EE90" stroke="#6BA86B" stroke-width="1"/>
+  <polyline points="48,61 51,64 57,58" stroke="#2C8C2C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Item 2 -->
+  <rect x="45" y="75" width="12" height="12" rx="2" fill="#90EE90" stroke="#6BA86B" stroke-width="1"/>
+  <polyline points="48,81 51,84 57,78" stroke="#2C8C2C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Item 3 (unchecked) -->
+  <rect x="45" y="95" width="12" height="12" rx="2" fill="#E8E8E8" stroke="#B8B8B8" stroke-width="1"/>
+  
+  <!-- Text lines -->
+  <line x1="62" y1="60" x2="90" y2="60" stroke="#7A8BA8" stroke-width="1.5"/>
+  <line x1="62" y1="80" x2="85" y2="80" stroke="#7A8BA8" stroke-width="1.5"/>
+  <line x1="62" y1="100" x2="90" y2="100" stroke="#7A8BA8" stroke-width="1.5"/>
+  <line x1="62" y1="120" x2="75" y2="120" stroke="#7A8BA8" stroke-width="1.5"/>
+  
+  <!-- Target/Bullseye -->
+  <!-- Outer circle -->
+  <circle cx="135" cy="105" r="35" fill="#8B7BB8" stroke="#6B5B98" stroke-width="2"/>
+  
+  <!-- Middle circle -->
+  <circle cx="135" cy="105" r="24" fill="#C5D5E8" stroke="#9FB3D1" stroke-width="1.5"/>
+  
+  <!-- Inner circle -->
+  <circle cx="135" cy="105" r="13" fill="#8B7BB8" stroke="#6B5B98" stroke-width="1.5"/>
+  
+  <!-- Center dot -->
+  <circle cx="135" cy="105" r="6" fill="#FFE082"/>
+</svg>

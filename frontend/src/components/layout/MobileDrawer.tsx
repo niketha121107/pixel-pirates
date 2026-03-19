@@ -1,6 +1,6 @@
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { BookOpen, X, User, ClipboardList, Bot, LogOut, StickyNote, TrendingUp, Search, Sparkles, Trash2 } from 'lucide-react';
+import { BookOpen, X, User, ClipboardList, Bot, LogOut, StickyNote, TrendingUp, Search, Trash2, LayoutDashboard } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { searchAPI, usersAPI } from '../../services/api';
@@ -18,7 +18,9 @@ export const MobileDrawer = ({ isOpen, onClose }: MobileDrawerProps) => {
     const [avgScore, setAvgScore] = useState(0);
     const [streak, setStreak] = useState(0);
 
+
     const isProfile = location.pathname === '/profile';
+    const isDashboard = location.pathname === '/dashboard';
     const isTopics = location.pathname === '/videos';
     const isMockTest = location.pathname === '/mock-test';
     const isChat = location.pathname === '/chat';
@@ -86,13 +88,29 @@ export const MobileDrawer = ({ isOpen, onClose }: MobileDrawerProps) => {
                     >
                         {/* Header */}
                         <div className="px-5 flex items-center justify-between mb-4">
-                            <Link to="/profile" onClick={onClose} className="text-2xl font-bold text-gradient">EduTwin</Link>
+                            <Link to="/dashboard" onClick={onClose} className="text-2xl font-bold text-gradient">EduTwin</Link>
                             <button
                                 onClick={onClose}
                                 className="p-2 text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
                             >
                                 <X className="w-5 h-5" />
                             </button>
+                        </div>
+
+                        {/* Dashboard */}
+                        <div className="px-4 mb-2">
+                            <Link
+                                to="/dashboard"
+                                onClick={onClose}
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${
+                                    isDashboard
+                                        ? 'bg-pink-50 text-pink-600 border border-pink-200'
+                                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+                                }`}
+                            >
+                                <LayoutDashboard className="w-5 h-5" />
+                                Dashboard
+                            </Link>
                         </div>
 
                         {/* Profile Nav Link */}
@@ -214,22 +232,6 @@ export const MobileDrawer = ({ isOpen, onClose }: MobileDrawerProps) => {
                                 </div>
                             </div>
                         )}
-
-                        <div className="px-4 mb-2">
-                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 px-1 flex items-center gap-1">
-                                <Sparkles className="w-3 h-3" /> Progress Flash Cards
-                            </p>
-                            <div className="space-y-2">
-                                <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3">
-                                    <p className="text-xs font-semibold text-blue-700">Performance</p>
-                                    <p className="text-xs text-blue-900 mt-1">Average Score: {avgScore}%</p>
-                                </div>
-                                <div className="rounded-xl border border-purple-200 bg-purple-50/70 p-3">
-                                    <p className="text-xs font-semibold text-purple-700">Streak</p>
-                                    <p className="text-xs text-purple-900 mt-1">{streak} day{streak === 1 ? '' : 's'} active</p>
-                                </div>
-                            </div>
-                        </div>
 
                         <div className="flex-1" />
 

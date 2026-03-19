@@ -19,8 +19,9 @@ const badgeFromRank = (rank: number) => {
 export const Leaderboard = () => {
     const { user } = useAuth();
     const [drawerOpen, setDrawerOpen] = useState(false);
-    const [leaderboardData, setLeaderboardData] = useState<{ rank: number; name: string; xp: number; badge: string; isCurrentUser: boolean }[]>([]);
     const [loading, setLoading] = useState(true);
+    const [leaderboardData, setLeaderboardData] = useState<{ rank: number; name: string; xp: number; badge: string; isCurrentUser: boolean }[]>([]);
+
 
     useEffect(() => {
         setLoading(true);

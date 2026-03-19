@@ -11,6 +11,8 @@ export interface User {
     rank: number;
     preferredStyle: ExplanationStyle;
     confusionCount: number;
+    antiCheatWarnings?: number;
+    suspendedUntil?: string | null;
 }
 
 export type TopicStatus = 'completed' | 'pending' | 'in-progress';

@@ -1,0 +1,25 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Notebook background -->
+  <rect x="35" y="30" width="130" height="150" rx="16" fill="#D4B896" stroke="#A0826D" stroke-width="2"/>
+  
+  <!-- Spiral binding holes -->
+  <circle cx="50" cy="50" r="3.5" fill="#8B7355"/>
+  <circle cx="50" cy="75" r="3.5" fill="#8B7355"/>
+  <circle cx="50" cy="100" r="3.5" fill="#8B7355"/>
+  <circle cx="50" cy="125" r="3.5" fill="#8B7355"/>
+  <circle cx="50" cy="150" r="3.5" fill="#8B7355"/>
+  
+  <!-- Lines on notebook -->
+  <line x1="65" y1="55" x2="155" y2="55" stroke="#9D8B79" stroke-width="2.5"/>
+  <line x1="65" y1="75" x2="155" y2="75" stroke="#9D8B79" stroke-width="2.5"/>
+  <line x1="65" y1="95" x2="155" y2="95" stroke="#9D8B79" stroke-width="2.5"/>
+  <line x1="65" y1="115" x2="155" y2="115" stroke="#9D8B79" stroke-width="2.5"/>
+  <line x1="65" y1="135" x2="130" y2="135" stroke="#9D8B79" stroke-width="2.5"/>
+  
+  <!-- Pen -->
+  <g transform="translate(155, 115)">
+    <rect x="-8" y="-35" width="6" height="40" fill="#E8C547" stroke="#C9A935" stroke-width="1.5" rx="2"/>
+    <polygon points="0,-35 -4,-28 4,-28" fill="#8B4513" stroke="#654321" stroke-width="1"/>
+    <circle cx="0" cy="8" r="4" fill="#E8C547" stroke="#C9A935" stroke-width="1"/>
+  </g>
+</svg>

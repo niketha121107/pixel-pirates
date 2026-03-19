@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { BookOpen, User, ClipboardList, Bot, LogOut, StickyNote, TrendingUp, Clock, Search, Trash2, Sparkles } from 'lucide-react';
+import { BookOpen, User, ClipboardList, Bot, LogOut, StickyNote, TrendingUp, Clock, Search, Trash2, LayoutDashboard, BarChart3 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { topicsAPI, searchAPI, usersAPI } from '../../services/api';
 
@@ -64,14 +64,31 @@ export const Sidebar = () => {
     };
 
     const isProfile = location.pathname === '/profile';
+    const isDashboard = location.pathname === '/dashboard';
     const isTopics = location.pathname === '/videos';
     const isMockTest = location.pathname === '/mock-test';
     const isChat = location.pathname === '/chat';
     const isNotes = location.pathname === '/notes';
     const isProgress = location.pathname === '/progress';
+    const isMockResults = location.pathname === '/mock-test-results';
 
     return (
         <aside className="hidden lg:flex flex-col w-64 fixed left-0 top-16 bottom-0 bg-white/90 backdrop-blur-md border-r border-pink-100 pt-4 pb-4 z-30 overflow-y-auto">
+            {/* Dashboard */}
+            <div className="px-4 mb-2">
+                <Link
+                    to="/dashboard"
+                    className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${
+                        isDashboard
+                            ? 'bg-pink-50 text-pink-600 border border-pink-200'
+                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+                    }`}
+                >
+                    <LayoutDashboard className="w-5 h-5" />
+                    Dashboard
+                </Link>
+            </div>
+
             {/* Profile Nav Link */}
             <div className="px-4 mb-2">
                 <Link
@@ -99,10 +116,6 @@ export const Sidebar = () => {
                 >
                     <BookOpen className="w-5 h-5" />
                     <span className="flex-1">Topics</span>
-                    <span className="flex items-center gap-1 text-xs">
-                        <span className="bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full font-bold">{completedCount}</span>
-                        <span className="bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-bold">{pendingCount}</span>
-                    </span>
                 </Link>
             </div>
 
@@ -118,6 +131,21 @@ export const Sidebar = () => {
                 >
                     <ClipboardList className="w-5 h-5" />
                     Mock Test
+                </Link>
+            </div>
+
+            {/* Mock Test Results */}
+            <div className="px-4 mb-2">
+                <Link
+                    to="/mock-test-results"
+                    className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${
+                        isMockResults
+                            ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+                    }`}
+                >
+                    <BarChart3 className="w-5 h-5" />
+                    Test Results
                 </Link>
             </div>
 
@@ -196,25 +224,6 @@ export const Sidebar = () => {
                     </div>
                 </div>
             )}
-
-            {/* Progress Flash Cards */}
-            <div className="px-4 mb-3">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 px-1 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3" /> Progress Flash Cards
-                </p>
-                <div className="space-y-2">
-                    <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3">
-                        <p className="text-xs font-semibold text-blue-700">Performance Snapshot</p>
-                        <p className="text-xs text-blue-900 mt-1">Average Score: {avgScore}%</p>
-                        <p className="text-xs text-blue-900">Completion: {completedCount}/{completedCount + pendingCount || 0}</p>
-                    </div>
-                    <div className="rounded-xl border border-purple-200 bg-purple-50/70 p-3">
-                        <p className="text-xs font-semibold text-purple-700">Learning Streak</p>
-                        <p className="text-xs text-purple-900 mt-1">Current Streak: {streak} day{streak === 1 ? '' : 's'}</p>
-                        <p className="text-xs text-purple-900">Tip: Finish one pending topic today.</p>
-                    </div>
-                </div>
-            </div>
 
             {/* Logout Button */}
             <div className="px-4 pt-2 border-t border-pink-100 mt-2">
