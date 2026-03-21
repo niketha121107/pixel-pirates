@@ -12,9 +12,39 @@ export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }:
     const [progress, setProgress] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isReady, setIsReady] = useState(false);
+    const [hasError, setHasError] = useState(false);
     const playerRef = useRef<any>(null);
 
     const Player = ReactPlayer as any;
+
+    // Extract YouTube ID and convert to embed format
+    const getEmbedUrl = (playerUrl: string) => {
+        if (!playerUrl) return '';
+        
+        // Extract video ID from various YouTube URL formats
+        let videoId = '';
+        
+        if (playerUrl.includes('youtube.com/watch')) {
+            const match = playerUrl.match(/v=([a-zA-Z0-9_-]{11})/);
+            videoId = match ? match[1] : '';
+        } else if (playerUrl.includes('youtu.be/')) {
+            const match = playerUrl.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+            videoId = match ? match[1] : '';
+        } else if (playerUrl.includes('youtube.com/embed/')) {
+            const match = playerUrl.match(/embed\/([a-zA-Z0-9_-]{11})/);
+            videoId = match ? match[1] : '';
+        } else if (/^[a-zA-Z0-9_-]{11}$/.test(playerUrl)) {
+            // Direct video ID
+            videoId = playerUrl;
+        }
+        
+        if (!videoId) return playerUrl;
+        
+        // Use embed format which is more reliable
+        return `https://www.youtube.com/embed/${videoId}?enablejsapi=1`;
+    };
+
+    const embedUrl = getEmbedUrl(url);
 
     const handleProgress = (state: any) => {
         const played = (state.played * 100);
@@ -29,6 +59,26 @@ export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }:
         onEnded?.();
     };
 
+    const handleError = (error: any) => {
+        console.error('❌ Video player error:', error);
+        console.error('URL attempted:', embedUrl);
+        setHasError(true);
+        setIsReady(true);
+    };
+
+    if (hasError) {
+        return (
+            <GlassCard className="p-0 overflow-hidden">
+                <div className="relative aspect-video bg-gray-900 rounded-xl overflow-hidden flex items-center justify-center">
+                    <div className="text-center text-white">
+                        <p className="text-sm mb-2">⚠️ Video cannot be loaded</p>
+                        <p className="text-xs text-gray-400">YouTube video may not be available in your region</p>
+                    </div>
+                </div>
+            </GlassCard>
+        );
+    }
+
     return (
         <GlassCard className="p-0 overflow-hidden">
             <div className="relative aspect-video bg-black rounded-xl overflow-hidden">
@@ -42,20 +92,26 @@ export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }:
                 )}
                 <Player
                     ref={playerRef}
-                    url={url}
+                    url={embedUrl}
                     width="100%"
                     height="100%"
                     controls={true}
                     playing={isPlaying}
-                    onReady={() => setIsReady(true)}
-                    onPlay={() => setIsPlaying(true)}
-                    onPause={() => setIsPlaying(false)}
-                    onProgress={handleProgress}
-                    onEnded={handleEnded}
-                    onError={(error: any) => {
-                        console.error('Video player error:', error);
+                    onReady={() => {
+                        console.log('✅ Video ready');
                         setIsReady(true);
                     }}
+                    onPlay={() => {
+                        console.log('▶ Playing');
+                        setIsPlaying(true);
+                    }}
+                    onPause={() => {
+                        console.log('⏸ Paused');
+                        setIsPlaying(false);
+                    }}
+                    onProgress={handleProgress}
+                    onEnded={handleEnded}
+                    onError={handleError}
                     progressInterval={500}
                     config={{
                         youtube: {
@@ -65,12 +121,14 @@ export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }:
                                 modestbranding: 1,
                                 rel: 0,
                                 fs: 1,
-                                iv_load_policy: 3,  // Hide annotations
+                                iv_load_policy: 3,
+                                allow: 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture',
                             },
                         },
                         file: {
                             attributes: {
                                 controlsList: 'nodownload',
+                                allowFullScreen: true,
                                 crossOrigin: 'anonymous',
                             },
                         },
