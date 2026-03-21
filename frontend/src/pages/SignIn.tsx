@@ -48,7 +48,7 @@ export const SignIn = () => {
     };
 
     return (
-        <div className="min-h-screen w-full flex flex-col lg:flex-row overflow-auto relative">
+        <div className="w-full flex flex-col lg:flex-row lg:min-h-screen overflow-auto relative">
             {/* Center Seal Mark */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                 <motion.div

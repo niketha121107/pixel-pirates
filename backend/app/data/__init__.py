@@ -41,9 +41,11 @@ def _get_db():
 
 
 def _clean_doc(doc: dict) -> dict:
-    """Remove MongoDB _id from a document copy."""
+    """Convert MongoDB _id to id field for in-memory cache."""
     d = dict(doc)
-    d.pop("_id", None)
+    if "_id" in d:
+        d["id"] = str(d["_id"])
+        d.pop("_id", None)
     return d
 
 
@@ -158,7 +160,7 @@ def _persist_user(user_id: str):
         return
     user = MOCK_USERS.get(user_id)
     if user:
-        db.users.replace_one({"id": user_id}, user, upsert=True)
+        db.users.replace_one({"_id": user_id}, user, upsert=True)
 
 
 def add_search_query(user_id: str, query: str):
@@ -462,7 +464,7 @@ def get_user_feedback(user_id: str, topic_id: str = None) -> list:
 
 # ── Mock test results CRUD ─────────────────────────────────────
 def save_mock_result(user_id: str, result_data: dict) -> dict:
-    """Persist a mock test result."""
+    """Persist a mock test result and update user stats."""
     db = _get_db()
     record = {
         "user_id": user_id,
@@ -471,6 +473,53 @@ def save_mock_result(user_id: str, result_data: dict) -> dict:
     }
     if db is not None:
         db.mock_results.insert_one(record)
+    
+    # Update user stats based on mock test result
+    user = MOCK_USERS.get(user_id)
+    if user:
+        # Update quizzes taken count
+        user["quizzesTaken"] = user.get("quizzesTaken", 0) + 1
+        
+        # Update total hours learned (convert seconds to hours)
+        time_hours = result_data.get("time_taken", 0) / 3600
+        user["totalHours"] = user.get("totalHours", 0) + time_hours
+        
+        # Update quiz scores and average
+        percentage = result_data.get("percentage", 0)
+        score = result_data.get("score", 0)
+        
+        user.setdefault("quizScores", {})[f"mock_test_{record.get('created_at', 'unknown')}"] = percentage
+        
+        # Calculate new average score from all quiz scores
+        all_scores = list(user.get("quizScores", {}).values())
+        if all_scores:
+            user["avgScore"] = sum(all_scores) / len(all_scores)
+        
+        # Update topic status based on mock test result
+        topics = result_data.get("topics", [])
+        for topic_id in topics:
+            # Ensure lists exist
+            user.setdefault("completedTopics", [])
+            user.setdefault("inProgressTopics", [])
+            user.setdefault("pendingTopics", [])
+            
+            # Remove from other lists if present
+            for list_name in ["pendingTopics", "inProgressTopics", "completedTopics"]:
+                if topic_id in user[list_name]:
+                    user[list_name].remove(topic_id)
+            
+            # Add to appropriate list based on score
+            if percentage >= 70:
+                # Topic passed - mark as completed
+                user["completedTopics"].append(topic_id)
+                user["totalScore"] = user.get("totalScore", 0) + score
+            else:
+                # Topic attempted but not passed - mark as in-progress
+                user["inProgressTopics"].append(topic_id)
+        
+        _persist_user(user_id)
+        _rebuild_leaderboard()
+    
     record.pop("_id", None)
     return record
 
@@ -484,7 +533,7 @@ def get_mock_results(user_id: str) -> list:
 
 # ── Detailed per-topic progress ────────────────────────────────
 def save_topic_progress(user_id: str, topic_id: str, data: dict) -> dict:
-    """Save detailed per-topic progress (time_spent, attempts, scores, etc.)."""
+    """Save detailed per-topic progress (time_spent, attempts, scores, etc.) and update user's total hours."""
     db = _get_db()
     record = {
         "user_id": user_id,
@@ -498,6 +547,17 @@ def save_topic_progress(user_id: str, topic_id: str, data: dict) -> dict:
             {"$set": record, "$setOnInsert": {"created_at": datetime.now().isoformat()}},
             upsert=True,
         )
+    
+    # Update user's total learning hours
+    user = MOCK_USERS.get(user_id)
+    if user:
+        time_spent_seconds = data.get("time_spent", 0)
+        if time_spent_seconds > 0:
+            # Convert seconds to hours and add to total
+            time_hours = time_spent_seconds / 3600
+            user["totalHours"] = user.get("totalHours", 0) + time_hours
+            _persist_user(user_id)
+    
     return record
 
 

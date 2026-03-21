@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { topicsAPI, feedbackAPI, progressAPI } from '../services/api';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { Navbar } from '../components/layout/Navbar';
@@ -139,8 +139,12 @@ export const TopicView = () => {
     const [confidence, setConfidence] = useState(40);
     const { saveUnderstanding } = useUnderstanding();
     const { addNotification } = useNotifications();
-    const { startTracking, stopTracking, elapsedTime, getInsight } = useLearningTimer();
+    const { startTracking, stopTracking, pauseTracking, resumeTracking, elapsedTime, isPaused, getInsight, getTotalLearningHours, getTopicTime } = useLearningTimer();
     const { preferences } = useUserPreferences();
+    const location = useLocation();
+    const trackingStartedRef = useRef(false);
+    const accumulatedTimeRef = useRef(0);
+    const wasPausedRef = useRef(false);
 
 
     // API-loaded state
@@ -148,12 +152,15 @@ export const TopicView = () => {
     const [topicLanguage, setTopicLanguage] = useState('');
     const [topicOverview, setTopicOverview] = useState('');
     const [videoUrl, setVideoUrl] = useState('');
+    const [recommendedVideos, setRecommendedVideos] = useState<any[]>([]);
     const [topicNotes, setTopicNotes] = useState('');
     const [translatedNotes, setTranslatedNotes] = useState('');
     const [notesLang, setNotesLang] = useState(preferences.language || 'en');
     const [isTranslatingNotes, setIsTranslatingNotes] = useState(false);
     const [testResult, setTestResult] = useState<any>(null);
     const [hasAttemptedTest, setHasAttemptedTest] = useState(false);
+    const [isFetchingFreshVideos, setIsFetchingFreshVideos] = useState(false);
+    const [freshVideosError, setFreshVideosError] = useState('');
 
 
     const [explanations, setExplanations] = useState<Record<ExplanationType, ExplanationContent>>({
@@ -170,6 +177,23 @@ export const TopicView = () => {
     useEffect(() => {
         if (!topicId) { setLoadingTopic(false); return; }
         setLoadingTopic(true);
+        
+        // Check if we're returning from study material
+        const pauseStateKey = `timer_paused_${topicId}`;
+        const pauseState = localStorage.getItem(pauseStateKey);
+        const wasReturningFromStudy = pauseState === 'true';
+        
+        // If returning from study material, resume the tracking
+        if (wasReturningFromStudy && trackingStartedRef.current) {
+            // Mark that we've resumed, so don't reset on next effect
+            localStorage.removeItem(pauseStateKey);
+            wasPausedRef.current = true; // Will trigger resume in the location.pathname effect
+        } else if (!wasReturningFromStudy) {
+            // Only reset if this is a fresh topic load, not a return from study
+            trackingStartedRef.current = false;
+            accumulatedTimeRef.current = 0;
+        }
+        
         topicsAPI.getById(topicId)
             .then(res => {
                 const topic = res.data?.data?.topic;
@@ -179,9 +203,16 @@ export const TopicView = () => {
                     setTopicOverview(topic.overview || '');
                     setIsCompleted(topic.status === 'completed');
 
-                    // Start learning timer
-                    startTracking(topicId, topic.topicName || topicId);
+                    // Start learning timer (only once per topic or if resumed from study material)
+                    if (!trackingStartedRef.current) {
+                        startTracking(topicId, topic.topicName || topicId);
+                        trackingStartedRef.current = true;
+                    } else if (wasReturningFromStudy) {
+                        // If we're returning from study and tracking was paused, resume it now
+                        resumeTracking();
+                    }
                     const videos = topic.recommendedVideos || [];
+                    setRecommendedVideos(videos);
                     if (videos.length > 0 && videos[0].youtubeId) {
                         setVideoUrl(`https://www.youtube.com/watch?v=${videos[0].youtubeId}`);
                     }
@@ -315,12 +346,74 @@ export const TopicView = () => {
         }
     }, [topicNotes, notesLang]);
 
-    // Stop tracking when leaving topic
+    // Keep accumulated time in sync while user is on this topic
+    useEffect(() => {
+        if (!topicId || !trackingStartedRef.current) return;
+        
+        const interval = setInterval(() => {
+            // Continuously update accumulated time to ensure it's preserved
+            accumulatedTimeRef.current = getTopicTime(topicId);
+        }, 5000); // Update every 5 seconds
+        
+        return () => clearInterval(interval);
+    }, [topicId, getTopicTime]);
+
+    // Stop tracking and save time to backend when leaving topic or completing
     useEffect(() => {
         return () => { 
-            stopTracking(); 
+            if (trackingStartedRef.current) {
+                // Accumulate current session time before stopping
+                accumulatedTimeRef.current += elapsedTime;
+                stopTracking();
+                
+                // Save the time spent on this topic to the backend
+                const totalTimeSpent = Math.round(accumulatedTimeRef.current);
+                if (totalTimeSpent > 0) {
+                    progressAPI.saveTopic({
+                        topic_id: topicId,
+                        time_spent: totalTimeSpent,
+                        status: isCompleted ? 'completed' : 'in-progress',
+                    }).catch(() => {});
+                }
+                trackingStartedRef.current = false;
+            }
         };
-    }, [topicId, stopTracking]);
+    }, [topicId, isCompleted]);
+
+    // Resume timer if coming back from study material with saved pause state
+    useEffect(() => {
+        if (!topicId || location.pathname === '/study-material') return;
+        
+        const savedPauseKey = `timer_pause_${topicId}`;
+        const savedPause = localStorage.getItem(savedPauseKey);
+        
+        if (savedPause) {
+            try {
+                // Resume from where we paused
+                resumeTracking();
+            } catch (e) {
+                console.log('Could not resume from saved pause state');
+            }
+        }
+    }, [location.pathname, topicId, resumeTracking]);
+
+    // Pause timer when navigating to study material
+    useEffect(() => {
+        if (location.pathname === '/study-material' && trackingStartedRef.current && !isPaused) {
+            pauseTracking();
+            wasPausedRef.current = true;
+            // Set a flag to indicate we paused for study material (so we know to resume later)
+            localStorage.setItem(`timer_paused_${topicId}`, 'true');
+        }
+    }, [location.pathname, pauseTracking, isPaused, topicId]);
+
+    // Resume timer when coming back to topic view
+    useEffect(() => {
+        if (topicId && wasPausedRef.current && isPaused && location.pathname !== '/study-material') {
+            resumeTracking();
+            wasPausedRef.current = false;
+        }
+    }, [location.pathname, topicId, isPaused, resumeTracking]);
 
     const insight = getInsight();
     const formatElapsed = (s: number) => {
@@ -339,7 +432,25 @@ export const TopicView = () => {
 
     const handleComplete = () => {
         if (hasWatchedFull && topicId) {
+            // Update accumulated time
+            accumulatedTimeRef.current += elapsedTime;
+            const totalTimeSpent = Math.round(accumulatedTimeRef.current);
+            
+            // Update topic status
             topicsAPI.updateStatus(topicId, { status: 'completed', score: 85 }).catch(() => {});
+            
+            // Save learning time to user progress
+            progressAPI.saveTopic({
+                topic_id: topicId,
+                time_spent: totalTimeSpent,
+                status: 'completed',
+            }).catch(() => {
+                console.log('Failed to save time, but continuing...');
+            });
+            
+            // Stop tracking after saving
+            stopTracking();
+            
             setIsCompleted(true);
             addNotification({
                 type: 'congrats',
@@ -347,6 +458,47 @@ export const TopicView = () => {
                 message: `Great job finishing "${topicTitle}"! Keep up the awesome work.`,
                 topicId: parseInt(topicId) || 0,
             });
+        }
+    };
+
+    const handleFreshVideos = async () => {
+        if (!topicId) return;
+        
+        setIsFetchingFreshVideos(true);
+        setFreshVideosError('');
+        
+        try {
+            const response = await topicsAPI.getFreshVideos(topicId, 3);
+            const freshVideos = response.data?.data?.recommendedVideos || [];
+            
+            if (freshVideos.length > 0) {
+                setRecommendedVideos(freshVideos);
+                if (freshVideos[0].youtubeId) {
+                    setVideoUrl(`https://www.youtube.com/watch?v=${freshVideos[0].youtubeId}`);
+                }
+                addNotification({
+                    type: 'success',
+                    title: '🎥 Fresh Videos Loaded',
+                    message: `Found ${freshVideos.length} fresh videos from YouTube!`,
+                    topicId: parseInt(topicId) || 0,
+                });
+            } else {
+                setFreshVideosError('No fresh videos found on YouTube.');
+            }
+        } catch (error: any) {
+            const errorMsg = error.response?.data?.detail || error.message || 'Failed to fetch fresh videos';
+            setFreshVideosError(errorMsg);
+            
+            if (errorMsg.includes('quota')) {
+                addNotification({
+                    type: 'warning',
+                    title: '⚠️ Billing Required',
+                    message: 'Enable billing on Google Cloud to access YouTube videos. Click the Fresh Videos button again after enabling.',
+                    topicId: parseInt(topicId) || 0,
+                });
+            }
+        } finally {
+            setIsFetchingFreshVideos(false);
         }
     };
 
@@ -433,10 +585,10 @@ export const TopicView = () => {
                             <div className="flex items-center justify-between flex-wrap gap-3">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
-                                        <Timer className="w-5 h-5 text-indigo-600" />
+                                        <Timer className={`w-5 h-5 ${isPaused ? 'text-orange-600' : 'text-indigo-600'}`} />
                                     </div>
                                     <div>
-                                        <p className="text-xs text-gray-500 font-medium">Time on this topic</p>
+                                        <p className="text-xs text-gray-500 font-medium">Time on this topic {isPaused && <span className="text-orange-600 font-bold">(Paused)</span>}</p>
                                         <p className="text-lg font-bold text-gray-800 font-mono">{formatElapsed(elapsedTime)}</p>
                                     </div>
                                 </div>
@@ -656,6 +808,33 @@ export const TopicView = () => {
                                     </div>
                                     <span className="text-sm font-medium text-gray-500">{Math.round(videoProgress)}% watched</span>
                                 </div>
+
+                                {/* Get Fresh Videos Button */}
+                                <div className="flex gap-3 pt-2">
+                                    <button
+                                        onClick={handleFreshVideos}
+                                        disabled={isFetchingFreshVideos}
+                                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg active:scale-95"
+                                    >
+                                        {isFetchingFreshVideos ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                Fetching...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Sparkles className="w-4 h-4" />
+                                                Get Fresh Videos
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+
+                                {freshVideosError && (
+                                    <div className="mt-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">
+                                        {freshVideosError}
+                                    </div>
+                                )}
                             </>
                         ) : (
                             <GlassCard className="p-8 flex flex-col items-center justify-center gap-4 text-center">
@@ -679,7 +858,6 @@ export const TopicView = () => {
                         )}
                     </motion.div>
 
-                    {/* ═══ SECTION 3: Study Materials (PDF + Notes) ═══ */}
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="space-y-3">
                         <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                             <span className="w-8 h-8 bg-brand/10 rounded-lg flex items-center justify-center text-brand text-sm font-bold">3</span>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { usersAPI, topicsAPI } from '../services/api';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { Navbar } from '../components/layout/Navbar';
@@ -6,7 +6,7 @@ import { Sidebar } from '../components/layout/Sidebar';
 import { MobileDrawer } from '../components/layout/MobileDrawer';
 import { GlassCard } from '../components/ui/GlassCard';
 import { ProgressRing } from '../components/ui/ProgressRing';
-import { BookCheck, Trophy, Target, Clock, CheckCircle2, XCircle, Brain, Frown, Meh, Smile, Sparkles } from 'lucide-react';
+import { BookCheck, Trophy, Target, Clock, CheckCircle2, XCircle, Brain, Frown, Meh, Smile, Sparkles, RotateCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useUnderstanding } from '../context/UnderstandingContext';
 import { useAuth } from '../context/AuthContext';
@@ -23,6 +23,7 @@ export const Progress = () => {
     const { user } = useAuth();
     const { entries, averageUnderstanding } = useUnderstanding();
     const [loading, setLoading] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [completedTopics, setCompletedTopics] = useState<{ title: string; score: number; total: number; date: string; videoWatched: boolean }[]>([]);
     const [overallStats, setOverallStats] = useState({
         totalTopics: 0,
@@ -33,79 +34,114 @@ export const Progress = () => {
         streak: 0,
     });
 
+    // Main fetch function - extracted for reusability
+    const fetchAllData = useCallback(async () => {
+        try {
+            // Use user-specific key to isolate test results per user
+            const userKey = `edutwin-mock-results_${user?.id || 'guest'}`;
+            const localMockRaw = localStorage.getItem(userKey);
+            let localMock: Array<{ topic?: string; percentage?: number; score?: number; maxScore?: number; createdAt?: string; timeTakenSec?: number }> = [];
+            if (localMockRaw) {
+                try {
+                    localMock = JSON.parse(localMockRaw);
+                } catch {
+                    localMock = [];
+                }
+            }
 
+            const [statsRes, topicsRes] = await Promise.allSettled([
+                usersAPI.stats(),
+                topicsAPI.getAll(),
+            ]);
+
+            if (statsRes.status === 'fulfilled') {
+                const s = statsRes.value.data?.data?.stats;
+                if (s) {
+                    const localAvg = localMock.length > 0
+                        ? Math.round(localMock.reduce((sum, r) => sum + Number(r.percentage || 0), 0) / localMock.length)
+                        : 0;
+                    const localHours = localMock.length > 0
+                        ? Math.round(localMock.reduce((sum, r) => sum + Number(r.timeTakenSec || 0), 0) / 3600)
+                        : 0;
+
+                    setOverallStats({
+                        totalTopics: s.totalTopics ?? 0,
+                        completedTopics: s.topicsCompleted ?? 0,
+                        totalQuizzes: Math.max(s.quizzesTaken ?? 0, localMock.length),
+                        avgScore: Math.max(s.avgScore ?? 0, localAvg),
+                        totalHoursLearned: Math.max(s.totalHours ?? 0, localHours),
+                        streak: s.streak ?? 0,
+                    });
+                }
+            }
+
+            if (topicsRes.status === 'fulfilled') {
+                const topics = (topicsRes.value.data?.data?.topics || [])
+                    .filter((t: any) => t.status === 'completed')
+                    .map((t: any) => ({
+                        title: t.topicName || t.title,
+                        score: t.score ?? 0,
+                        total: t.total ?? 100,
+                        date: t.completedAt || '',
+                        videoWatched: true,
+                    }));
+
+                const localCompleted = localMock
+                    .filter(r => typeof r.percentage === 'number')
+                    .slice(0, 20)
+                    .map((r) => ({
+                        title: r.topic || 'Mock Test',
+                        score: Number(r.score || 0),
+                        total: Number(r.maxScore || 100),
+                        date: r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '',
+                        videoWatched: true,
+                    }));
+
+                setCompletedTopics(topics.length > 0 ? topics : localCompleted);
+            }
+        } catch (error) {
+            console.error('Error fetching progress data:', error);
+        }
+    }, [user?.id]);
+
+    // Initial load on mount
     useEffect(() => {
-        const fetchAll = async () => {
+        const load = async () => {
             setLoading(true);
-            try {
-                // Use user-specific key to isolate test results per user
-                const userKey = `edutwin-mock-results_${user?.id || 'guest'}`;
-                const localMockRaw = localStorage.getItem(userKey);
-                let localMock: Array<{ topic?: string; percentage?: number; score?: number; maxScore?: number; createdAt?: string; timeTakenSec?: number }> = [];
-                if (localMockRaw) {
-                    try {
-                        localMock = JSON.parse(localMockRaw);
-                    } catch {
-                        localMock = [];
-                    }
-                }
+            await fetchAllData();
+            setLoading(false);
+        };
+        load();
+    }, [fetchAllData]);
 
-                const [statsRes, topicsRes] = await Promise.allSettled([
-                    usersAPI.stats(),
-                    topicsAPI.getAll(),
-                ]);
-
-                if (statsRes.status === 'fulfilled') {
-                    const s = statsRes.value.data?.data?.stats;
-                    if (s) {
-                        const localAvg = localMock.length > 0
-                            ? Math.round(localMock.reduce((sum, r) => sum + Number(r.percentage || 0), 0) / localMock.length)
-                            : 0;
-                        const localHours = localMock.length > 0
-                            ? Math.round(localMock.reduce((sum, r) => sum + Number(r.timeTakenSec || 0), 0) / 3600)
-                            : 0;
-
-                        setOverallStats({
-                            totalTopics: s.totalTopics ?? 0,
-                            completedTopics: s.topicsCompleted ?? 0,
-                            totalQuizzes: Math.max(s.quizzesTaken ?? 0, localMock.length),
-                            avgScore: Math.max(s.avgScore ?? 0, localAvg),
-                            totalHoursLearned: Math.max(s.totalHours ?? 0, localHours),
-                            streak: s.streak ?? 0,
-                        });
-                    }
-                }
-
-                if (topicsRes.status === 'fulfilled') {
-                    const topics = (topicsRes.value.data?.data?.topics || [])
-                        .filter((t: any) => t.status === 'completed')
-                        .map((t: any) => ({
-                            title: t.topicName || t.title,
-                            score: t.score ?? 0,
-                            total: t.total ?? 100,
-                            date: t.completedAt || '',
-                            videoWatched: true,
-                        }));
-
-                    const localCompleted = localMock
-                        .filter(r => typeof r.percentage === 'number')
-                        .slice(0, 20)
-                        .map((r) => ({
-                            title: r.topic || 'Mock Test',
-                            score: Number(r.score || 0),
-                            total: Number(r.maxScore || 100),
-                            date: r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '',
-                            videoWatched: true,
-                        }));
-
-                    setCompletedTopics(topics.length > 0 ? topics : localCompleted);
-                }
-            } finally {
-                setLoading(false);
+    // Auto-refresh: Listen for localStorage changes and poll periodically
+    useEffect(() => {
+        // Listen for storage changes (when mock test results are saved)
+        const handleStorageChange = (e: StorageEvent) => {
+            if (e.key?.includes('edutwin-mock-results') || e.key?.includes('edutwin-understanding')) {
+                fetchAllData();
             }
         };
-        fetchAll();
-    }, [user?.id]);
+
+        window.addEventListener('storage', handleStorageChange);
+
+        // Auto-refresh every 30 seconds while on this page
+        const pollInterval = setInterval(() => {
+            fetchAllData();
+        }, 30000);
+
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            clearInterval(pollInterval);
+        };
+    }, [fetchAllData]);
+
+    // Manual refresh handler
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        await fetchAllData();
+        setIsRefreshing(false);
+    };
 
     const completionPercentage = overallStats.totalTopics > 0 ? Math.round((overallStats.completedTopics / overallStats.totalTopics) * 100) : 0;
 
@@ -119,9 +155,19 @@ export const Progress = () => {
                 <div className="max-w-5xl mx-auto space-y-8">
 
                     {/* Header */}
-                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                        <h1 className="text-3xl md:text-4xl font-bold text-gray-800 mb-2">Student Progress</h1>
-                        <p className="text-gray-500">Track your learning journey, test scores, and achievements.</p>
+                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
+                        <div>
+                            <h1 className="text-3xl md:text-4xl font-bold text-gray-800 mb-2">Student Progress</h1>
+                            <p className="text-gray-500">Track your learning journey, test scores, and achievements.</p>
+                        </div>
+                        <button
+                            onClick={handleRefresh}
+                            disabled={isRefreshing}
+                            className="p-2 rounded-lg bg-brand/10 hover:bg-brand/20 text-brand transition-colors disabled:opacity-50"
+                            title="Refresh stats"
+                        >
+                            <RotateCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                        </button>
                     </motion.div>
 
                     {/* Stats Overview */}

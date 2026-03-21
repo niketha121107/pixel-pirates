@@ -10,7 +10,7 @@ from app.data import get_mock_data, initialize_data
 from app.routes import auth, users, topics, quiz, videos, leaderboard, analytics, search, chat
 from app.routes import database as db_routes
 from app.routes import notes, feedback, progress
-from app.routes import adaptive
+from app.routes import adaptive, study_materials, mock_test, content_delivery
 from app.core.config import Settings
 from app.core.database import connect_to_mongo, close_mongo_connection
 
@@ -91,6 +91,9 @@ app.include_router(notes.router, prefix="/api/notes", tags=["notes"])
 app.include_router(feedback.router, prefix="/api/feedback", tags=["feedback"])
 app.include_router(progress.router, prefix="/api/progress", tags=["progress"])
 app.include_router(adaptive.router, prefix="/api/adaptive", tags=["adaptive"])
+app.include_router(study_materials.router)
+app.include_router(mock_test.router)
+app.include_router(content_delivery.router)
 
 @app.get("/")
 async def read_root():

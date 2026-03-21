@@ -9,6 +9,7 @@ import { GlassCard } from '../components/ui/GlassCard';
 import { GradientButton } from '../components/ui/GradientButton';
 import { useAntiCheat } from '../context/AntiCheatContext';
 import { useAuth } from '../context/AuthContext';
+import { useLearningTimer } from '../context/LearningTimerContext';
 import { motion } from 'framer-motion';
 import { sanitizeMojibakeText } from '../lib/text';
 import {
@@ -231,6 +232,7 @@ export const MockTest = () => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const { user } = useAuth();
+    const { startTracking, stopTracking } = useLearningTimer();
     const topicId = searchParams.get('topicId') || '';
     const subtopicId = searchParams.get('subtopicId') || '';
     const isTopicContextTest = Boolean(topicId);
@@ -320,6 +322,15 @@ export const MockTest = () => {
         }
         return () => setTestActive(false);
     }, [mode, setTestActive]);
+
+    // Stop tracking when component unmounts or user navigates away
+    useEffect(() => {
+        return () => {
+            if (mode === 'active') {
+                stopTracking();
+            }
+        };
+    }, [mode, stopTracking]);
 
     const fillWithUniqueTopicBankQuestions = useCallback(async (
         baseQuestions: MockQuestion[],
@@ -442,6 +453,12 @@ export const MockTest = () => {
         setTimeLeft(testDuration * 60);
         setTotalTime(testDuration * 60);
         setMode('active');
+        
+        // Start tracking learning time for mock test
+        const testName = topicId 
+            ? `${topicFilter || 'Topic'} Mock Test`
+            : `${topicFilter || 'General'} Mock Test`;
+        startTracking(`mock-test-${Date.now()}`, testName);
     }, [isTopicContextTest, topicId, subtopicId, selectedTypes, questionCount, testDuration, topicFilter]);
 
     useEffect(() => {
@@ -493,6 +510,9 @@ export const MockTest = () => {
             time_taken: totalTime - timeLeft,
         }).catch(() => {});
 
+        // Stop tracking learning time
+        stopTracking();
+        
         setMode('review');
         setTestActive(false);
     }, [questions, answers, setTestActive, topicFilter, topicId, subtopicId, selectedTypes, totalTime, timeLeft]);
@@ -618,15 +638,22 @@ export const MockTest = () => {
                                     <h2 className="font-bold text-gray-800 mb-4">Test Settings</h2>
 
                                     <div className="mb-4">
-                                        <label className="text-sm font-medium text-gray-600 mb-2 block">Topic (optional)</label>
+                                        <label className="text-sm font-medium text-gray-600 mb-2 block">Topic <span className="text-red-500 font-bold">*</span> (mandatory)</label>
                                         <input
                                             type="text"
                                             value={topicFilter}
                                             onChange={e => setTopicFilter(e.target.value)}
                                             placeholder="e.g., Python, JavaScript..."
                                             disabled={isTopicContextTest}
-                                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand/40"
+                                            className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 transition-all ${
+                                                topicFilter.trim() === '' 
+                                                    ? 'border-red-300 bg-red-50 focus:ring-red-400' 
+                                                    : 'border-gray-200 focus:ring-brand/40'
+                                            }`}
                                         />
+                                        {topicFilter.trim() === '' && (
+                                            <p className="text-xs text-red-500 mt-1">⚠️ Topic selection is required to generate questions</p>
+                                        )}
                                     </div>
 
                                     <div className="mb-4">
@@ -715,8 +742,9 @@ export const MockTest = () => {
                             <div className="flex justify-center">
                                 <GradientButton
                                     onClick={startTest}
-                                    disabled={selectedTypes.length === 0 || loading}
+                                    disabled={selectedTypes.length === 0 || loading || topicFilter.trim() === ''}
                                     className="px-12 py-3 text-base"
+                                    title={topicFilter.trim() === '' ? 'Please select a topic first' : ''}
                                 >
                                     {loading ? (
                                         <span className="flex items-center gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Preparing Test...</span>

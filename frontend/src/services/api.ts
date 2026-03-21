@@ -62,6 +62,8 @@ export const topicsAPI = {
         api.get(`/topics/${id}/quiz`, { params: subtopicId ? { subtopicId } : {} }),
     updateStatus: (id: string, data: object) =>
         api.put(`/topics/${id}/status`, data),
+    getFreshVideos: (id: string, maxResults?: number) =>
+        api.get(`/topics/${id}/fresh-videos`, { params: maxResults ? { max_results: maxResults } : {} }),
 };
 
 // ── Quiz ─────────────────────────────────────────────────────────────
@@ -124,6 +126,8 @@ export const usersAPI = {
     analytics: (userId: string) => api.get(`/users/${userId}/analytics`),
     getMockTestIntegrity: () => api.get('/users/mock-test-integrity'),
     reportMockTestViolation: (reason: string) => api.post('/users/mock-test-integrity', { reason }),
+    recordTopicTime: (topicId: string, topicName: string, durationInSeconds: number) =>
+        api.post('/users/record-topic-time', { topicId, topicName, durationInSeconds }),
 };
 // ── Notes ────────────────────────────────────────────────────────
 export const notesAPI = {

@@ -9,7 +9,6 @@ import { Sidebar } from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
 import { ProfileAvatar } from '../components/profile/ProfileAvatar';
 import { WallpaperSettings } from '../components/profile/WallpaperSettings';
-import { LanguageSettings } from '../components/profile/LanguageSettings';
 import type { WallpaperOption } from '../components/profile/WallpaperSettings';
 import { MotivationalQuotes } from '../components/profile/MotivationalQuotes';
 import { useUserPreferences } from '../context/UserPreferencesContext';
@@ -136,11 +135,6 @@ export const UserProfile = () => {
 
     const handleWallpaperChange = (wp: WallpaperOption) => {
         setPendingWallpaper(wp.id);
-    };
-
-    const handleLanguageChange = (langCode: string) => {
-        // Language preference can be saved to localStorage directly
-        localStorage.setItem('preferredLanguage', langCode);
     };
 
     return (
@@ -364,10 +358,7 @@ export const UserProfile = () => {
                                 <WallpaperSettings currentWallpaper={pendingWallpaper} onWallpaperChange={handleWallpaperChange} />
                             </motion.div>
 
-                            {/* Language Settings */}
-                            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-                                <LanguageSettings currentLanguage={preferences.language} onLanguageChange={handleLanguageChange} />
-                            </motion.div>
+
                         </div>
                     </div>
 
