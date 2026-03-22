@@ -1,3 +1,0 @@
-Topics Count: 200
-Leaderboard Deleted: 0
-Status: SUCCESS - 200 topics added!

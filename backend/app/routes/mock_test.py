@@ -4,6 +4,7 @@ Handles question generation, rules, and violation tracking
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from typing import List, Dict, Any
 import logging
 from app.core.auth import get_current_user_from_token
@@ -11,6 +12,9 @@ from app.services.mock_test_service import mock_test_service, ViolationType
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/mock-test", tags=["Mock Test"])
+
+class ViolationRequest(BaseModel):
+    violation_type: str
 
 @router.get("/rules")
 async def get_mock_test_rules() -> Dict[str, Any]:
@@ -67,13 +71,14 @@ async def generate_mock_questions(
 
 @router.post("/record-violation")
 async def record_violation(
-    violation_type: str,
+    request: ViolationRequest,
     current_user: dict = Depends(get_current_user_from_token)
 ) -> Dict[str, Any]:
     """Record a mock test violation (screenshot, copy, tab switch)"""
     
     try:
         user_id = str(current_user.get("_id"))
+        violation_type = request.violation_type
         
         # Map violation type
         try:

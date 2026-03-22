@@ -1,4 +1,4 @@
-import { Bell, User, CheckCheck, Trash2, Clock, PartyPopper, Info, LogOut, Bot } from 'lucide-react';
+import { Bell, User, CheckCheck, Trash2, Clock, PartyPopper, Info, LogOut, Bot, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
@@ -11,6 +11,8 @@ const typeStyles: Record<NotificationType, { icon: typeof Clock; bg: string; col
     reminder: { icon: Clock, bg: 'bg-amber-100', color: 'text-amber-600' },
     congrats: { icon: PartyPopper, bg: 'bg-green-100', color: 'text-green-600' },
     info:     { icon: Info, bg: 'bg-blue-100', color: 'text-blue-600' },
+    success:  { icon: CheckCircle, bg: 'bg-green-100', color: 'text-green-600' },
+    warning:  { icon: AlertTriangle, bg: 'bg-amber-100', color: 'text-amber-600' },
 };
 
 function timeAgo(ts: number) {

@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
 
-export type NotificationType = 'reminder' | 'congrats' | 'info';
+export type NotificationType = 'reminder' | 'congrats' | 'info' | 'success' | 'warning';
 
 export interface Notification {
     id: string;

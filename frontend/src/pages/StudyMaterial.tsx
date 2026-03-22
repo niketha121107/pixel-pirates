@@ -59,12 +59,11 @@ export const StudyMaterial = () => {
                     })
                     .catch(err => {
                         console.warn('AI endpoint failed, trying database:', err);
-                        // Fallback: try loading from database
                         return topicsAPI.getById(topicId);
                     })
                     .then(res => {
-                        if (!material) {
-                            const topic = res.data?.data?.topic;
+                        if (!material && res && res.data) {
+                            const topic = res.data.data?.topic;
                             if (topic?.studyMaterial && Object.keys(topic.studyMaterial).length > 0) {
                                 setMaterial(topic.studyMaterial);
                             }

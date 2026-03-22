@@ -116,7 +116,7 @@ async def get_study_material(
 ) -> Dict[str, Any]:
     """Get previously generated study material"""
     try:
-        if not db.database:
+        if db.database is None:
             raise HTTPException(status_code=500, detail="Database not available")
         
         from bson import ObjectId
@@ -155,7 +155,7 @@ async def submit_feedback(
 ) -> Dict[str, Any]:
     """Submit feedback and regenerate material at appropriate level"""
     try:
-        if not db.database:
+        if db.database is None:
             raise HTTPException(status_code=500, detail="Database not available")
         
         from bson import ObjectId
@@ -291,7 +291,7 @@ async def _generate_materials_batch(topics: list, user_id: str):
                 
                 study_material = await study_material_generator.generate_study_material(topic_name)
                 
-                if study_material and db.database:
+                if study_material and db.database is not None:
                     materials_collection = db.database["study_materials"]
                     study_material["user_id"] = user_id
                     study_material["topic_id"] = str(topic.get("_id", topic_name))
@@ -319,7 +319,7 @@ async def get_topic_pdf_info(
 ) -> Dict[str, Any]:
     """Get PDF information for a specific topic by name"""
     try:
-        if not db.database:
+        if db.database is None:
             raise HTTPException(status_code=500, detail="Database not available")
         
         topics_collection = db.database["topics"]
@@ -363,7 +363,7 @@ async def get_all_topics_pdf_info(
 ) -> Dict[str, Any]:
     """Get PDF information for all topics"""
     try:
-        if not db.database:
+        if db.database is None:
             raise HTTPException(status_code=500, detail="Database not available")
         
         topics_collection = db.database["topics"]

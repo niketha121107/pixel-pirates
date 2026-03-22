@@ -5,6 +5,7 @@ import { authAPI } from '../services/api';
 
 interface AuthContextType {
     user: User | null;
+    token: string | null;
     isAuthenticated: boolean;
     loading: boolean;
     backendError: boolean;
@@ -111,7 +112,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, isAuthenticated: !!user, loading, backendError, login, signup, logout, refreshUser }}>
+        <AuthContext.Provider value={{ 
+            user, 
+            token: localStorage.getItem('token'), 
+            isAuthenticated: !!user, 
+            loading, 
+            backendError, 
+            login, 
+            signup, 
+            logout, 
+            refreshUser 
+        }}>
             {children}
         </AuthContext.Provider>
     );

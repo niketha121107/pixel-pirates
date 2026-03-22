@@ -18,7 +18,7 @@ interface UseAntiCheatProps {
 export const useAntiCheatMonitor = ({ testActive, onViolationWarning, onSuspension }: UseAntiCheatProps) => {
   const { user, token } = useAuth();
   const [suspensionStatus, setSuspensionStatus] = useState<any>(null);
-  const violationTimeoutRef = useRef<NodeJS.Timeout>();
+  const violationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const screenRecordingRef = useRef<boolean>(false);
 
   // Prevent screenshots using multiple methods
@@ -115,12 +115,11 @@ export const useAntiCheatMonitor = ({ testActive, onViolationWarning, onSuspensi
 
       try {
         const response = await axios.post(
-          `${import.meta.env.VITE_API_URL}/api/mock-test/record-violation`,
-          { violation_type: violationType },
+          `${import.meta.env.VITE_API_URL}/api/mock-test/record-violation?violation_type=${encodeURIComponent(violationType)}`,
+          {},
           {
             headers: {
               Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
             },
           }
         );

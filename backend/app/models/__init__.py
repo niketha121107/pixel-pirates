@@ -1,18 +1,36 @@
+from __future__ import annotations
+
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Literal
 from datetime import datetime, date
 from enum import Enum
+
+# Topic Models
+class Video(BaseModel):
+    id: str
+    title: str
+    language: str
+    youtube_id: str = Field(alias="youtubeId")
+    thumbnail: str
+    duration: str
+    
+    class Config:
+        populate_by_name = True
+
+class WatchedVideo(Video):
+    watched_at: str = Field(alias="watchedAt")
+    time_watched: str = Field(alias="timeWatched")
 
 # User Models
 class User(BaseModel):
     id: str
     name: str
     email: str
-    password: Optional[str] = None  # Don't include in responses
+    password: Optional[str] = None
     completed_topics: List[str] = Field(default_factory=list, alias="completedTopics")
     pending_topics: List[str] = Field(default_factory=list, alias="pendingTopics")
     in_progress_topics: List[str] = Field(default_factory=list, alias="inProgressTopics")
-    videos_watched: List["WatchedVideo"] = Field(default_factory=list, alias="videosWatched")
+    videos_watched: List[WatchedVideo] = Field(default_factory=list, alias="videosWatched")
     total_score: int = Field(default=0, alias="totalScore")
     rank: int = Field(default=0)
     preferred_style: str = Field(default="visual", alias="preferredStyle")
@@ -26,14 +44,13 @@ class User(BaseModel):
         populate_by_name = True
 
 class UserResponse(BaseModel):
-    """User model for API responses (without password)"""
     id: str
     name: str
     email: str
     completed_topics: List[str] = Field(alias="completedTopics")
     pending_topics: List[str] = Field(alias="pendingTopics")
     in_progress_topics: List[str] = Field(alias="inProgressTopics")
-    videos_watched: List["WatchedVideo"] = Field(alias="videosWatched")
+    videos_watched: List[WatchedVideo] = Field(alias="videosWatched")
     total_score: int = Field(alias="totalScore")
     rank: int
     preferred_style: str = Field(alias="preferredStyle")
@@ -109,24 +126,6 @@ class QuizQuestion(BaseModel):
     question: str
     options: List[str]
     correct_answer: int = Field(alias="correctAnswer")
-    
-    class Config:
-        populate_by_name = True
-
-class Video(BaseModel):
-    id: str
-    title: str
-    language: str
-    youtube_id: str = Field(alias="youtubeId")
-    thumbnail: str
-    duration: str
-    
-    class Config:
-        populate_by_name = True
-
-class WatchedVideo(Video):
-    watched_at: str = Field(alias="watchedAt")
-    time_watched: str = Field(alias="timeWatched")
     
     class Config:
         populate_by_name = True
