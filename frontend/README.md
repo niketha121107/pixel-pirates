@@ -232,12 +232,12 @@ The app starts at **http://localhost:5173** (default Vite port).
 
 | Variable | Default | Description |
 |---|---|---|
-| `VITE_API_URL` | `http://localhost:5000/api` | Backend API base URL |
+| `VITE_API_URL` | `http://localhost:8000/api` | Backend API base URL |
 
 Create a `.env` file in the project root:
 
 ```env
-VITE_API_URL=http://localhost:5000/api
+VITE_API_URL=http://localhost:8000/api
 ```
 
 ### Tailwind Theme
