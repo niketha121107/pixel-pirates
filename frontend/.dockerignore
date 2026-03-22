@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.next/
+.git/
+.gitignore
+README.md
+package-lock.json
+npm-debug.log
+.env
+.env.local
+.vscode/
+.idea/
+*.log

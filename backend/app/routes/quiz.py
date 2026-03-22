@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from app.models import QuizSubmission, QuizResult, SuccessResponse
 from app.data import get_topic_by_id, get_user_by_id, update_user_topic_progress
 from app.services.adaptive_engine_service import adaptive_engine_service
+from app.services.mock_test_service import mock_test_service
 from app.core.auth import get_current_user_from_token
 
 router = APIRouter()
@@ -187,119 +188,78 @@ async def generate_mock_test(
 ):
     """Generate a comprehensive mock test using Gemini AI"""
     try:
-        # Try to generate mock test using Gemini AI with a short timeout
-        import asyncio
-        try:
-            mock_test = await asyncio.wait_for(
-                adaptive_engine_service.generate_mock_test(
-                    topics=test_request.topics,
-                    difficulty_mix=test_request.difficulty_mix,
-                    total_questions=test_request.total_questions
-                ),
-                timeout=10.0  # 10 second timeout for AI
-            )
-        except (asyncio.TimeoutError, Exception):
-            mock_test = {"questions": None}
+        # Combine all topics into a single string
+        topics_str = ", ".join(test_request.topics) if test_request.topics else "General Programming"
         
-        if not mock_test.get("questions"):
-            # Fallback to mixed questions from existing topics
-            fallback_questions = []
-            from app.data import get_all_topics
-            all_topics = get_all_topics()
-
-            for topic in all_topics:
-                for q in topic.get("quiz", []):
-                    fallback_questions.append({
-                        **q,
-                        "topic": topic.get("topicName", "Programming"),
-                    })
-
-            if not fallback_questions:
-                fallback_questions = [{
-                    "id": "fallback-1",
-                    "type": "mcq",
-                    "question": "Which keyword defines a function in Python?",
-                    "options": ["func", "def", "function", "define"],
-                    "correctAnswer": "def",
-                    "correctIdx": 1,
-                    "difficulty": "Beginner",
-                    "topic": "Python",
-                    "explanation": "Python functions are declared with the def keyword.",
-                    "points": 10,
-                }]
-
-            expanded_questions = []
-            idx = 0
-            while len(expanded_questions) < test_request.total_questions:
-                src = fallback_questions[idx % len(fallback_questions)]
-                q_type = _normalize_mock_type(src.get("type"), idx)
-                options = src.get("options") or []
-                correct_idx = src.get("correctIdx")
-                correct_answer = src.get("correctAnswer")
-                if isinstance(correct_answer, int) and options:
-                    try:
-                        correct_answer = options[correct_answer]
-                    except Exception:
-                        correct_answer = ""
-
-                expanded_questions.append({
-                    "id": f"mq-{idx + 1}",
-                    "type": q_type,
-                    "question": src.get("question", ""),
-                    "options": options,
-                    "correctAnswer": str(correct_answer or ""),
-                    "correctIdx": correct_idx if isinstance(correct_idx, int) else None,
-                    "difficulty": src.get("difficulty", "Intermediate"),
-                    "topic": src.get("topic", "Programming"),
-                    "explanation": src.get("explanation", ""),
-                    "points": src.get("points", 10 if q_type != "written" else 15),
-                })
-                idx += 1
-            
-            mock_test = {
-                "metadata": {
-                    "title": "Programming Mock Test",
-                    "totalQuestions": test_request.total_questions,
-                    "estimatedTime": "30 minutes",
-                    "topics": test_request.topics
-                },
-                "questions": expanded_questions
-            }
-
-        # Normalize response shape and enforce requested length/types.
+        # Generate mock test questions using Gemini AI (NO FALLBACK - always use AI)
+        ai_questions = await mock_test_service.generate_mock_test_questions(
+            topic_name=topics_str,
+            num_questions=test_request.total_questions,
+            question_types=["multiple_choice", "fill_blank", "short_answer"]
+        )
+        
+        # Transform questions to the expected format
         normalized = []
-        for i, q in enumerate(mock_test.get("questions", [])[: test_request.total_questions]):
-            q_type = _normalize_mock_type(q.get("type"), i)
-            options = q.get("options") or []
-            correct_answer = q.get("correctAnswer")
-            if isinstance(correct_answer, int) and options:
+        for i, q in enumerate(ai_questions):
+            question_type = q.get("question_type", "multiple_choice")
+            
+            # Normalize question type
+            if question_type == "multiple_choice":
+                q_type = "mcq"
+            elif question_type == "fill_blank":
+                q_type = "fillup"
+            elif question_type == "short_answer":
+                q_type = "written"
+            else:
+                q_type = "mcq"
+            
+            # Extract options safely
+            options = q.get("options", [])
+            if not isinstance(options, list):
+                options = []
+            
+            # Find correct answer index
+            correct_answer = q.get("correct_answer", "")
+            correct_idx = None
+            if isinstance(options, list) and len(options) > 0:
                 try:
-                    correct_answer = options[correct_answer]
-                except Exception:
-                    correct_answer = ""
+                    correct_idx = options.index(correct_answer)
+                except (ValueError, TypeError):
+                    correct_idx = 0 if len(options) > 0 else None
+            
             normalized.append({
-                **q,
-                "id": q.get("id", f"mq-{i + 1}"),
+                "id": f"mock-{i + 1}",
                 "type": q_type,
-                "correctAnswer": str(correct_answer or ""),
+                "question": q.get("question", ""),
+                "options": options,
+                "correctAnswer": str(correct_answer),
+                "correctIdx": correct_idx,
+                "difficulty": q.get("difficulty", "medium").capitalize(),
+                "topic": topics_str,
+                "explanation": q.get("explanation", ""),
                 "points": q.get("points", 10 if q_type != "written" else 15),
             })
-
-        while normalized and len(normalized) < test_request.total_questions:
-            src = normalized[len(normalized) % len(normalized)]
-            normalized.append({ **src, "id": f"mq-{len(normalized) + 1}" })
-
-        mock_test["questions"] = normalized[: test_request.total_questions]
-        mock_test.setdefault("metadata", {})
-        mock_test["metadata"]["totalQuestions"] = len(mock_test["questions"])
+        
+        mock_test = {
+            "metadata": {
+                "title": f"Mock Test: {topics_str}",
+                "totalQuestions": len(normalized),
+                "estimatedTime": "30 minutes",
+                "topics": test_request.topics
+            },
+            "questions": normalized[: test_request.total_questions]
+        }
         
         return SuccessResponse(
             success=True,
-            message="Mock test generated successfully",
+            message="Mock test generated successfully using Gemini AI",
             data={"mockTest": mock_test}
         )
         
     except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error generating mock test: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating mock test: {str(e)}"

@@ -7,7 +7,7 @@ from datetime import datetime, date  # viewable article URLs
 import uvicorn
 from app.models import *
 from app.data import get_mock_data, initialize_data
-from app.routes import auth, users, topics, quiz, videos, leaderboard, analytics, search, chat
+from app.routes import auth, users, topics, quiz, videos, leaderboard, analytics, search, chat, ai_quiz, ai_content
 from app.routes import database as db_routes
 from app.routes import notes, feedback, progress
 from app.routes import adaptive, study_materials, mock_test, content_delivery
@@ -81,6 +81,8 @@ app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(topics.router, prefix="/api/topics", tags=["topics"])
 app.include_router(quiz.router, prefix="/api/quiz", tags=["quiz"])
+app.include_router(ai_quiz.router, prefix="/api/ai/quiz", tags=["AI-Generated Quizzes"])
+app.include_router(ai_content.router, prefix="/api/ai/content", tags=["AI-Generated Content"])
 app.include_router(videos.router, prefix="/api/videos", tags=["videos"])
 app.include_router(leaderboard.router, prefix="/api/leaderboard", tags=["leaderboard"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
@@ -99,13 +101,15 @@ app.include_router(content_delivery.router)
 async def read_root():
     return {
         "message": "🏴‍☠️ Welcome to Pixel Pirates API", 
-        "version": "2.0.0",
+        "version": "2.1.0",
         "features": [
             "JWT Authentication",
-            "AI-Powered Learning (Mistral 7B)",
+            "AI-Powered Mock Tests (Gemini 2.5 Flash + OpenRouter)",
+            "AI-Powered Learning Assistance",
             "YouTube Video Integration",
             "Adaptive Quizzes",
-            "Progress Analytics"
+            "Progress Analytics",
+            "Anti-Cheat Mock Test Security"
         ],
         "docs": f"{settings.API_BASE_URL}/docs"
     }
@@ -113,12 +117,12 @@ async def read_root():
 @app.get("/api")
 async def api_info():
     return {
-        "message": "Pixel Pirates API v2.0.0", 
+        "message": "Pixel Pirates API v2.1.0", 
         "endpoints": {
             "auth": "/api/auth (login, signup, logout, refresh)",
             "users": "/api/users (profile, stats)",
             "topics": "/api/topics (learning content)",
-            "quiz": "/api/quiz (adaptive quizzes, mock tests)",
+            "quiz": "/api/quiz (adaptive quizzes, AI-powered mock tests)",
             "videos": "/api/videos (YouTube integration)",
             "leaderboard": "/api/leaderboard (rankings)",
             "analytics": "/api/analytics (progress tracking)",

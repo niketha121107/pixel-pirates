@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { topicsAPI } from '../services/api';
+import { topicsAPI, aiAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, BookOpen, Loader2, Code2, CheckCircle2, XCircle, AlertTriangle, Lightbulb } from 'lucide-react';
+import { ArrowLeft, BookOpen, Loader2, Code2, CheckCircle2, XCircle, AlertTriangle, Lightbulb, Sparkles } from 'lucide-react';
 import { sanitizeMojibakePreserveLines, sanitizeMojibakeText } from '../lib/text';
 import type { NoteImportance } from '../components/profile/NoteSection';
 
@@ -32,23 +32,48 @@ export const StudyMaterial = () => {
     const [selectedSnippet, setSelectedSnippet] = useState('');
     const [noteImportance, setNoteImportance] = useState<NoteImportance>('medium');
     const [selectionAnchor, setSelectionAnchor] = useState<{ x: number; y: number } | null>(null);
+    const [isAIGenerated, setIsAIGenerated] = useState(false);
 
     useEffect(() => {
         if (!topicId) { setLoading(false); return; }
+        
+        // Load topic metadata
         topicsAPI.getById(topicId)
             .then(res => {
                 const topic = res.data?.data?.topic;
                 if (topic) {
                     setTopicName(topic.topicName || '');
                     setLanguage(topic.language || '');
-                    if (topic.studyMaterial && Object.keys(topic.studyMaterial).length > 0) {
-                        setMaterial(topic.studyMaterial);
-                    }
                 }
             })
-            .catch(() => {})
-            .finally(() => setLoading(false));
-    }, [topicId]);
+            .catch(err => console.warn('Error loading topic:', err))
+            .finally(() => {
+                // Try AI endpoint first, then fallback to database
+                aiAPI.studyMaterial(topicId)
+                    .then(res => {
+                        const data = res.data?.data?.studyMaterial;
+                        if (data) {
+                            setMaterial(data);
+                            setIsAIGenerated(true);
+                        }
+                    })
+                    .catch(err => {
+                        console.warn('AI endpoint failed, trying database:', err);
+                        // Fallback: try loading from database
+                        return topicsAPI.getById(topicId);
+                    })
+                    .then(res => {
+                        if (!material) {
+                            const topic = res.data?.data?.topic;
+                            if (topic?.studyMaterial && Object.keys(topic.studyMaterial).length > 0) {
+                                setMaterial(topic.studyMaterial);
+                            }
+                        }
+                    })
+                    .catch(err => console.error('Failed to load study material:', err))
+                    .finally(() => setLoading(false));
+            });
+    }, [topicId, material]);
 
     if (loading) {
         return (
@@ -124,6 +149,7 @@ export const StudyMaterial = () => {
                     <BookOpen className="w-5 h-5 text-brand flex-shrink-0" />
                     <h1 className="text-lg font-bold text-gray-800 truncate">{topicName}</h1>
                     {language && <span className="text-xs font-medium text-brand bg-brand/10 px-2 py-0.5 rounded-full flex-shrink-0">{language}</span>}
+                    {isAIGenerated && <span className="text-xs font-medium text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full flex-shrink-0 flex items-center gap-1"><Sparkles className="w-3 h-3" /> AI Generated</span>}
                 </div>
             </div>
 
@@ -135,9 +161,10 @@ export const StudyMaterial = () => {
                         <div className="flex items-center gap-2 text-white/70 text-sm mb-3">
                             <BookOpen className="w-4 h-4" />
                             <span>{language}</span>
+                            {isAIGenerated && <span className="text-white/60 text-xs flex items-center gap-1"><Sparkles className="w-3 h-3" /> Powered by AI</span>}
                         </div>
                         <h1 className="text-3xl font-bold">{material.title || topicName}</h1>
-                        <p className="text-white/80 mt-2 text-sm">Complete Study Material &bull; {language}</p>
+                        <p className="text-white/80 mt-2 text-sm">Complete Study Material &bull; {language}{isAIGenerated ? ' • AI Generated' : ''}</p>
                     </div>
 
                     <div className="px-8 py-8 space-y-8">

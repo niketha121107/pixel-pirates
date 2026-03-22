@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { topicsAPI, quizAPI, progressAPI } from '../services/api';
+import { topicsAPI, quizAPI, progressAPI, aiAPI } from '../services/api';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GradientButton } from '../components/ui/GradientButton';
@@ -175,9 +175,30 @@ export const QuizPage = () => {
     // Fetch questions from API
     useEffect(() => {
         setLoading(true);
+        console.log(`QuizPage: Fetching quiz for topicId=${topicId}`);
+        
+        // Always try AI endpoint first if topicId is provided
         const fetchQuiz = topicId
-            ? topicsAPI.getQuiz(topicId, subtopicId || undefined)
-            : quizAPI.adaptive('topic-1', 5);
+            ? aiAPI.quiz(topicId, 5, 'mixed')
+                .then(res => {
+                    console.log('AI quiz generated successfully');
+                    return res;
+                })
+                .catch((aiErr) => {
+                    // Fallback: try regular quiz API from topics
+                    console.warn('AI quiz failed, trying regular API:', aiErr?.message || aiErr);
+                    return topicsAPI.getQuiz(topicId)
+                        .catch((topicsErr) => {
+                            console.error('Both AI and regular quiz failed:', topicsErr?.message || topicsErr);
+                            throw topicsErr;
+                        });
+                })
+            : aiAPI.generateAdaptive('topic-1', 5)
+                .catch(() => {
+                    // Fallback: try adaptive quiz
+                    console.warn('AI adaptive failed, trying regular API');
+                    return quizAPI.adaptive('topic-1', 5);
+                });
 
         fetchQuiz
             .then(res => {
@@ -192,7 +213,8 @@ export const QuizPage = () => {
                 setQuestions(mapped);
                 setAnswers(Array(mapped.length).fill(null));
             })
-            .catch(() => {
+            .catch((err) => {
+                console.error('Failed to fetch quiz:', err);
                 setQuestions([]);
             })
             .finally(() => setLoading(false));

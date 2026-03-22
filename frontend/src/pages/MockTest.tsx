@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { quizAPI, topicsAPI, progressAPI } from '../services/api';
+import { quizAPI, topicsAPI, progressAPI, aiAPI } from '../services/api';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { Navbar } from '../components/layout/Navbar';
 import { Sidebar } from '../components/layout/Sidebar';
@@ -408,30 +408,58 @@ export const MockTest = () => {
                 }
                 setQuestions(preparedQuestions);
             } else {
-                // Generic mock test setup
-                const res = await quizAPI.mockTest({
-                    topics: topicFilter ? [topicFilter] : ['programming'],
-                    difficulty_mix: { Beginner: Math.ceil(questionCount * 0.3), Intermediate: Math.ceil(questionCount * 0.5), Advanced: Math.max(1, questionCount - Math.ceil(questionCount * 0.3) - Math.ceil(questionCount * 0.5)) },
-                    total_questions: questionCount,
-                });
-                const apiQuestions = res.data?.data?.mockTest?.questions || res.data?.data?.questions || [];
-                if (apiQuestions.length > 0) {
-                    const mapped = apiQuestions.map((q: any, i: number) => mapToMockQuestion(q, i)) as MockQuestion[];
-
-                    const filteredByType = mapped.filter((q: MockQuestion) => selectedTypes.includes(q.type));
-                    preparedQuestions = buildBalancedQuestionSet(filteredByType, selectedTypes, questionCount);
-
-                    if (preparedQuestions.length < questionCount) {
-                        preparedQuestions = await fillWithUniqueTopicBankQuestions(preparedQuestions, questionCount, selectedTypes);
-                    }
-
-                    if (preparedQuestions.length === questionCount) {
-                        setQuestions(preparedQuestions);
-                    } else {
-                        throw new Error('Could not build the requested number of unique questions from API results');
+                // Custom topic AI quiz - try AI generation first for any topic
+                if (topicFilter && topicFilter.trim() !== '') {
+                    try {
+                        console.log(`🚀 Requesting AI-generated questions for custom topic: ${topicFilter}`);
+                        const res = await aiAPI.customTopicQuiz(topicFilter, questionCount, 'mixed');
+                        const aiQuestions = res.data?.data?.questions || [];
+                        
+                        if (aiQuestions.length > 0) {
+                            console.log(`✅ Received ${aiQuestions.length} AI-generated questions for "${topicFilter}"`);
+                            const mapped = aiQuestions.map((q: any, i: number) => mapToMockQuestion(q, i)) as MockQuestion[];
+                            
+                            const filteredByType = mapped.filter((q: MockQuestion) => selectedTypes.includes(q.type));
+                            preparedQuestions = buildBalancedQuestionSet(filteredByType, selectedTypes, questionCount);
+                            
+                            if (preparedQuestions.length === questionCount) {
+                                setQuestions(preparedQuestions);
+                            } else {
+                                throw new Error(`Expected ${questionCount} questions, got ${preparedQuestions.length}`);
+                            }
+                        } else {
+                            throw new Error('AI returned no questions');
+                        }
+                    } catch (aiError: any) {
+                        console.warn(`⚠️ AI custom topic failed: ${aiError?.message}. Falling back to mock test...`);
+                        
+                        // Fallback to generic mock test
+                        const res = await quizAPI.mockTest({
+                            topics: [topicFilter],
+                            difficulty_mix: { Beginner: Math.ceil(questionCount * 0.3), Intermediate: Math.ceil(questionCount * 0.5), Advanced: Math.max(1, questionCount - Math.ceil(questionCount * 0.3) - Math.ceil(questionCount * 0.5)) },
+                            total_questions: questionCount,
+                        });
+                        const apiQuestions = res.data?.data?.mockTest?.questions || res.data?.data?.questions || [];
+                        if (apiQuestions.length > 0) {
+                            const mapped = apiQuestions.map((q: any, i: number) => mapToMockQuestion(q, i)) as MockQuestion[];
+                            const filteredByType = mapped.filter((q: MockQuestion) => selectedTypes.includes(q.type));
+                            preparedQuestions = buildBalancedQuestionSet(filteredByType, selectedTypes, questionCount);
+                            
+                            if (preparedQuestions.length < questionCount) {
+                                preparedQuestions = await fillWithUniqueTopicBankQuestions(preparedQuestions, questionCount, selectedTypes);
+                            }
+                            
+                            if (preparedQuestions.length === questionCount) {
+                                setQuestions(preparedQuestions);
+                            } else {
+                                throw new Error('Could not build the requested number of unique questions from API results');
+                            }
+                        } else {
+                            throw new Error('No questions from API');
+                        }
                     }
                 } else {
-                    throw new Error('No questions from API');
+                    throw new Error('Topic is required to generate questions');
                 }
             }
         } catch {

@@ -428,22 +428,51 @@ async def get_personalized_explanation(
 async def get_topic_quiz(
     topic_id: str,
     subtopicId: Optional[str] = Query(None, description="Optional subtopic ID to get subtopic-specific quiz"),
+    current_user: dict = Depends(get_current_user_from_token)
 ):
     """Get quiz questions for a specific topic or subtopic"""
     topic = get_topic_by_id(topic_id)
     if not topic:
         raise HTTPException(status_code=404, detail="Topic not found")
 
-    quiz = topic["quiz"]
-    quiz_name = topic["topicName"]
-
+    topic_name = topic.get("topicName") or topic.get("name", "Programming Concept")
+    quiz_name = topic_name
+    
+    # Try to get stored quiz first
+    quiz = topic.get("quiz", [])
+    
     if subtopicId:
         for sub in topic.get("subtopics", []):
             if sub.get("id") == subtopicId:
-                quiz = sub.get("quiz", topic["quiz"])
-                quiz_name = sub.get("name", topic["topicName"])
+                quiz = sub.get("quiz", quiz)
+                quiz_name = sub.get("name", topic_name)
                 break
-
+    
+    # If no stored quiz or it's empty, generate using AI
+    if not quiz or len(quiz) == 0:
+        try:
+            from app.services.ai_content_service import ai_generator
+            import logging
+            _log = logging.getLogger(__name__)
+            _log.info(f"No stored quiz found. Generating AI quiz for {topic_name}")
+            
+            # Generate fresh AI questions
+            questions = await ai_generator.generate_quiz_questions(
+                topic_name=topic_name,
+                num_questions=5,
+                difficulty=topic.get("difficulty", "mixed")
+            )
+            
+            if questions:
+                quiz = questions
+                _log.info(f"Generated {len(questions)} AI questions for {topic_name}")
+        except Exception as e:
+            import logging
+            _log = logging.getLogger(__name__)
+            _log.warning(f"Failed to generate AI quiz for {topic_name}: {e}")
+            # Fall through with empty quiz, which will be handled below
+    
+    # Return whatever we have (stored, AI-generated, or empty)
     return SuccessResponse(
         success=True,
         message="Quiz questions retrieved successfully",

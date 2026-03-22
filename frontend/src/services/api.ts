@@ -161,4 +161,74 @@ export const adaptiveAPI = {
     explanation: (topicId: string) => api.get(`/adaptive/explanation/${topicId}`),
     quiz: (topicId: string) => api.get(`/adaptive/quiz/${topicId}`),
 };
+
+// ── AI Content Generation ────────────────────────────────────────
+export const aiAPI = {
+    // Study Material
+    studyMaterial: (topicId: string) =>
+        api.get(`/ai/content/study-material/${topicId}`),
+    
+    // Explanations (all styles or specific ones)
+    explanations: (topicId: string, styles?: string) =>
+        api.get(`/ai/content/explanations/${topicId}`, { 
+            params: styles ? { styles } : {} 
+        }),
+    
+    // Full Content Package
+    fullContent: (topicId: string, includeQuiz?: boolean, quizQuestions?: number) =>
+        api.get(`/ai/content/full-content/${topicId}`, {
+            params: { 
+                include_quiz: includeQuiz !== false, 
+                quiz_questions: quizQuestions || 4 
+            }
+        }),
+    
+    // Quiz endpoints
+    testAI: (topicName: string, questionCount?: number) =>
+        api.get(`/ai/quiz/test-ai`, {
+            params: { topic_name: topicName, question_count: questionCount || 2 }
+        }),
+    
+    quiz: (topicId: string, questionCount?: number, difficulty?: string) =>
+        api.get(`/ai/quiz/quiz/${topicId}`, {
+            params: { 
+                question_count: questionCount || 5,
+                difficulty: difficulty || 'mixed'
+            }
+        }),
+    
+    generateAdaptive: (topicId: string, questionCount?: number) =>
+        api.get(`/ai/quiz/generate-adaptive`, {
+            params: { 
+                topic_id: topicId,
+                question_count: questionCount || 5
+            }
+        }),
+    
+    mockTest: (topics: string[], totalQuestions?: number, difficultyEasy?: number, difficultyMedium?: number, difficultyHard?: number) =>
+        api.post(`/ai/quiz/mock-test`, null, {
+            params: {
+                topics: JSON.stringify(topics),
+                total_questions: totalQuestions || 10,
+                difficulty_easy: difficultyEasy || 4,
+                difficulty_medium: difficultyMedium || 4,
+                difficulty_hard: difficultyHard || 2
+            }
+        }),
+    
+    
+    evaluateQuiz: (answers: object) =>
+        api.post(`/ai/quiz/evaluate`, answers),
+    
+    // Custom topic quiz - generate questions for ANY topic (not limited to database)
+    customTopicQuiz: (topicName: string, questionCount?: number, difficulty?: string) =>
+        api.post(`/ai/quiz/custom-topic`, null, {
+            params: {
+                topic_name: topicName,
+                question_count: questionCount || 5,
+                difficulty: difficulty || 'medium'
+            }
+        }),
+};
+
 export default api;

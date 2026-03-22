@@ -8,6 +8,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from enum import Enum
+import json
+import httpx
 import google.generativeai as genai
 from pymongo import MongoClient
 from app.core.config import settings
@@ -27,7 +29,9 @@ class MockTestSecurityService:
     
     def __init__(self):
         genai.configure(api_key=settings.GEMINI_API_KEY)
-        self.model = settings.GEMINI_MODEL
+        self.gemini_model = settings.GEMINI_MODEL
+        self.openrouter_api_key = settings.OPENROUTER_API_KEY
+        self.openrouter_model = settings.OPENROUTER_MODEL
         self.max_violations = 10
         self.suspension_duration = 6  # hours
     
@@ -37,7 +41,7 @@ class MockTestSecurityService:
         num_questions: int = 10,
         question_types: List[str] = None
     ) -> List[Dict[str, Any]]:
-        """Generate mock test questions using Gemini 2.5 Flash"""
+        """Generate mock test questions using Gemini, fallback to OpenRouter, then synthetic"""
         
         if question_types is None:
             question_types = ["multiple_choice", "fill_blank", "short_answer"]
@@ -79,16 +83,16 @@ Return ONLY valid JSON array with no additional text:
   ...
 ]"""
         
+        logger.info(f"Generating {num_questions} mock test questions for topic: {topic_name}")
+        
+        # Step 1: Try Gemini first
         try:
-            logger.info(f"Generating {num_questions} mock test questions for topic: {topic_name}")
-            
             response = await asyncio.to_thread(
                 self._call_gemini,
                 prompt
             )
             
             # Parse response
-            import json
             try:
                 # Extract JSON from response (handle potential markdown code blocks)
                 content = response.strip()
@@ -98,20 +102,82 @@ Return ONLY valid JSON array with no additional text:
                     content = content.split("```")[1].split("```")[0]
                 
                 questions = json.loads(content)
+                logger.info(f"✅ Generated {len(questions)} questions using Gemini AI for {topic_name}")
+                return questions
             except json.JSONDecodeError:
-                logger.error("Failed to parse Gemini response as JSON")
-                questions = self._create_fallback_questions(topic_name, num_questions)
-            
-            logger.info(f"✅ Generated {len(questions)} questions for {topic_name}")
-            return questions
-            
+                logger.warning("Failed to parse Gemini response as JSON, trying OpenRouter...")
         except Exception as e:
-            logger.error(f"Error generating questions: {e}")
-            return self._create_fallback_questions(topic_name, num_questions)
+            error_msg = str(e).lower()
+            if "quota" in error_msg or "429" in error_msg:
+                logger.warning(f"⚠️  Gemini quota exceeded, falling back to OpenRouter: {e}")
+            else:
+                logger.warning(f"⚠️  Gemini API error, trying OpenRouter: {e}")
+        
+        # Step 2: Try OpenRouter API as fallback
+        if self.openrouter_api_key:
+            try:
+                questions = await self._generate_with_openrouter(prompt, num_questions)
+                if questions:
+                    logger.info(f"✅ Generated {len(questions)} questions using OpenRouter API for {topic_name}")
+                    return questions
+            except Exception as e:
+                logger.warning(f"⚠️  OpenRouter API error: {e}")
+        
+        # Step 3: Fall back to synthetic questions
+        logger.warning(f"⚠️  All AI APIs failed, using synthetic questions for {topic_name}")
+        return self._create_fallback_questions(topic_name, num_questions)
+    
+    async def _generate_with_openrouter(self, prompt: str, num_questions: int) -> Optional[List[Dict[str, Any]]]:
+        """Generate questions using OpenRouter API (Claude or similar)"""
+        try:
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self.openrouter_api_key}",
+                "Content-Type": "application/json",
+            }
+            
+            payload = {
+                "model": self.openrouter_model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "temperature": 0.5,
+                "max_tokens": 2000,
+            }
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, headers=headers, json=payload)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    
+                    # Extract JSON from response
+                    try:
+                        if "```json" in content:
+                            content = content.split("```json")[1].split("```")[0]
+                        elif "```" in content:
+                            content = content.split("```")[1].split("```")[0]
+                        
+                        questions = json.loads(content)
+                        return questions
+                    except json.JSONDecodeError:
+                        logger.error("Failed to parse OpenRouter response as JSON")
+                        return None
+                else:
+                    logger.error(f"OpenRouter API error {response.status_code}: {response.text[:200]}")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Error calling OpenRouter API: {e}")
+            return None
     
     def _call_gemini(self, prompt: str) -> str:
         """Synchronous wrapper for Gemini API call"""
-        model = genai.GenerativeModel(self.model)
+        model = genai.GenerativeModel(self.gemini_model)
         response = model.generate_content(prompt)
         return response.text
     
