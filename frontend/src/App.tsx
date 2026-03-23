@@ -19,7 +19,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 function AppRoutes() {
   const location = useLocation();
-  const isAuthenticated = Boolean(localStorage.getItem('access_token'));
+  const isAuthenticated = Boolean(localStorage.getItem('token'));
 
   useEffect(() => {
     const allowSelectionPaths = ['/study-material', '/pdf-viewer'];
