@@ -8,26 +8,36 @@ from typing import List, Optional
 from app.models import SuccessResponse
 from app.services.adaptive_engine_service import adaptive_engine_service
 from app.core.auth import get_current_user_from_token
+from app.data import get_all_topics
 import asyncio
 import logging
-import random
 import re
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Keywords/patterns that indicate inappropriate content
+OUT_OF_SCOPE_MESSAGE = "Sorry, I can only answer questions related to the provided learning topics."
+
 INAPPROPRIATE_PATTERNS = [
-    # Violence/harm
-    'how to kill', 'how to hurt', 'how to bomb', 'how to hack', 'how to cheat exam',
-    # Explicit content
-    'nude', 'sex', 'porn', 'xxx', 'adult content',
-    # Illegal activities
-    'how to steal', 'how to cheat', 'how to commit fraud', 'illegal',
-    # Hate/discrimination
-    'racist', 'sexist', 'hate speech', 'discriminate',
+    "how to kill", "how to hurt", "how to bomb", "how to hack", "how to cheat exam",
+    "nude", "sex", "porn", "xxx", "adult content",
+    "how to steal", "how to cheat", "how to commit fraud", "illegal",
+    "racist", "sexist", "hate speech", "discriminate",
 ]
+
+GENERIC_TOPIC_TERMS = {
+    "programming", "coding", "algorithm", "algorithms", "data structure", "data structures",
+    "array", "arrays", "string", "strings", "loop", "loops", "function", "functions",
+    "class", "classes", "object", "objects", "recursion", "sorting", "searching",
+    "complexity", "big o", "debug", "debugging", "python", "javascript", "java",
+    "html", "css", "react", "fastapi", "database", "sql", "api"
+}
+
+STOP_WORDS = {
+    "the", "a", "an", "and", "or", "for", "to", "of", "in", "on", "with", "by", "at",
+    "is", "are", "be", "as", "it", "this", "that", "from", "about", "into", "using"
+}
 
 
 def _is_inappropriate_question(message: str) -> bool:
@@ -39,23 +49,56 @@ def _is_inappropriate_question(message: str) -> bool:
     return False
 
 
-def _build_redirect_response(user_name: str) -> str:
-    """Build a friendly redirect message for inappropriate questions"""
-    responses = [
-        f"Hey {user_name}! 👋 I appreciate your curiosity, but that's not something I can help with here. "
-        f"Remember, we're here on this platform to learn and grow together! 📚✨ "
-        f"How about we focus on something related to your learning goals instead? "
-        f"I'd love to help you master programming, data structures, algorithms, or any other tech topic! What would you like to learn? 🚀",
-        
-        f"Hi {user_name}! 😊 I'm here specifically to support your learning journey on this platform. "
-        f"That question isn't related to your studies, so let's keep our chat focused on helping you succeed! 💪 "
-        f"Whether it's Python, JavaScript, Java, or other programming topics, I'm ready to help! What shall we learn today? 📖",
-        
-        f"Hello {user_name}! 👨‍💻 This platform is all about building your tech skills and knowledge! "
-        f"That topic doesn't fit our learning mission, so let's redirect to something constructive. "
-        f"I can help you understand complex concepts, debug code, create quizzes, or explore new topics in tech! What interests you? 🎯",
-    ]
-    return random.choice(responses)
+def _get_topic_terms() -> tuple[set[str], set[str]]:
+    """Collect topic phrases and tokens from the configured learning topics."""
+    phrases: set[str] = set()
+    tokens: set[str] = set(GENERIC_TOPIC_TERMS)
+
+    try:
+        for topic in get_all_topics():
+            name = str(topic.get("name") or topic.get("topicName") or "").strip().lower()
+            language = str(topic.get("language") or "").strip().lower()
+
+            if name:
+                phrases.add(name)
+                for piece in re.split(r"[^a-z0-9+#]+", name):
+                    piece = piece.strip()
+                    if len(piece) >= 3 and piece not in STOP_WORDS:
+                        tokens.add(piece)
+
+            if language and len(language) >= 3:
+                tokens.add(language)
+    except Exception as exc:
+        logger.warning(f"Could not load topic terms for chat guard: {exc}")
+
+    return phrases, tokens
+
+
+def _is_topic_related(message: str) -> bool:
+    """Allow only learning-topic questions based on configured topics and core study terms."""
+    msg = (message or "").strip().lower()
+    if not msg:
+        return False
+
+    phrases, tokens = _get_topic_terms()
+
+    for phrase in phrases:
+        if phrase and phrase in msg:
+            return True
+
+    message_tokens = {
+        part.strip()
+        for part in re.split(r"[^a-z0-9+#]+", msg)
+        if part.strip() and part.strip() not in STOP_WORDS
+    }
+
+    if message_tokens & tokens:
+        return True
+
+    if any(term in msg for term in ("data structure", "big o", "time complexity", "space complexity")):
+        return True
+
+    return False
 
 
 def _strip_followup_greeting(text: str, user_name: str) -> str:
@@ -104,49 +147,42 @@ def _build_fallback_response(user_name: str, message: str, history: List[dict]) 
     text = (message or '').strip()
     lower = text.lower()
 
-    intro_options = [
-        f"Hey {user_name}! 👋 Had a tiny connection hiccup, but no worries - I'm still here to help!",
-        f"Hi {user_name}! 😊 My full AI brain took a coffee break, but I've got you covered with a focused answer!",
-        f"Hello {user_name}! ✨ Quick mode activated! Let me break this down for you!",
-    ]
-
     if 'for loop' in lower and 'python' in lower:
         body = (
-            "Ooh, Python for loops! These are super useful! 🔄\n\n"
-            "Think of a for loop like going through items in your backpack one by one:\n\n"
-            "**How it works:**\n"
-            "• It automatically grabs each item from a list/sequence\n"
-            "• Runs your code for each item\n"
-            "• Moves to the next one automatically\n\n"
-            "**Example:**\n"
+            "### Quick Answer\n"
+            "A Python `for` loop iterates over each item in a sequence and executes a block for each item.\n\n"
+            "### Key Points\n"
+            "- Best when iterating known collections like lists, strings, and ranges.\n"
+            "- Stops automatically when items are exhausted.\n"
+            "- Reduces manual index handling compared to `while`.\n\n"
+            "### Example\n"
             "```python\n"
             "for i in range(5):\n"
             "    print(i)\n"
             "# Prints: 0, 1, 2, 3, 4\n"
-            "```\n\n"
-            "**Pro tip:** Need both index AND value? Use enumerate()!\n"
-            "```python\n"
-            "fruits = ['apple', 'banana']\n"
-            "for index, fruit in enumerate(fruits):\n"
-            "    print(f'{index}: {fruit}')\n"
-            "```\n\n"
-            "Want to see more examples? Just ask! 🚀"
+            "```\n"
+            "`range(5)` generates values 0 through 4, and each value is assigned to `i` for one iteration.\n\n"
+            "### Next Step\n"
+            "Try using `enumerate()` to get both index and value in the same loop."
         )
     elif 'while loop' in lower and 'python' in lower:
         body = (
-            "Ah, while loops! The 'keep doing this until...' loop! 🔁\n\n"
-            "**When to use it:**\n"
-            "• When you don't know exactly how many times you'll loop\n"
-            "• Perfect for 'keep trying until success' situations\n\n"
-            "**Example:**\n"
+            "### Quick Answer\n"
+            "A Python `while` loop repeats as long as its condition remains `True`.\n\n"
+            "### Key Points\n"
+            "- Useful when iteration count is unknown in advance.\n"
+            "- Condition is checked before each iteration.\n"
+            "- Update loop variables to avoid infinite loops.\n\n"
+            "### Example\n"
             "```python\n"
             "count = 0\n"
             "while count < 3:\n"
             "    print(f'Count is {count}')\n"
-            "    count += 1  # Don't forget this or it'll loop forever! ⚠️\n"
-            "```\n\n"
-            "**Important:** Always make sure your condition eventually becomes False, or you'll get stuck in an infinite loop! 😅\n\n"
-            "Need help with a specific while loop scenario? Hit me up! 💪"
+            "    count += 1\n"
+            "```\n"
+            "The update `count += 1` guarantees the condition eventually becomes false.\n\n"
+            "### Next Step\n"
+            "Practice with a `while` loop that reads input until the user types `quit`."
         )
     elif 'python' in lower:
         body = (
@@ -164,29 +200,26 @@ def _build_fallback_response(user_name: str, message: str, history: List[dict]) 
             "```\n"
             "This prints a personalized greeting and shows how readable Python is.\n\n"
             "### Next Step\n"
-            "Want a quick mini-path: variables -> conditions -> loops -> functions?"
+            "Study in this order: variables -> conditions -> loops -> functions, then build one mini project."
         )
     elif 'javascript' in lower or 'js' in lower:
         body = (
-            "JavaScript! The language that powers the web! 🌐✨\n\n"
-            "**Your JS learning path:**\n\n"
-            "**1. Fundamentals** 🎯\n"
-            "   • Variables (let, const, var)\n"
-            "   • Functions (regular and arrow functions)\n"
-            "   • Arrays and objects\n\n"
-            "**2. DOM Magic** 🎨\n"
-            "   • Selecting elements\n"
-            "   • Event listeners (clicks, hovers, etc.)\n"
-            "   • Making pages interactive!\n\n"
-            "**3. Async Superpowers** ⚡\n"
-            "   • Promises and .then()\n"
-            "   • async/await (the clean way!)\n"
-            "   • Fetching data from APIs\n\n"
-            "**4. Modern JS** 🚀\n"
-            "   • Destructuring, spread operator\n"
-            "   • Template literals\n"
-            "   • Map, filter, reduce\n\n"
-            "Pick a topic and I'll explain it like you're learning from a friend! What sounds good? 🤔"
+            "### Quick Answer\n"
+            "JavaScript is the core language for interactive web applications.\n\n"
+            "### Key Points\n"
+            "- Start with variables, functions, arrays, and objects.\n"
+            "- Learn DOM manipulation and event handling for browser apps.\n"
+            "- Use `async/await` for API calls and asynchronous logic.\n"
+            "- Modern syntax like destructuring and spread improves readability.\n\n"
+            "### Example\n"
+            "```javascript\n"
+            "const names = ['Ana', 'Sam'];\n"
+            "const upper = names.map((n) => n.toUpperCase());\n"
+            "console.log(upper);\n"
+            "```\n"
+            "This example transforms an array using `map`, a core JavaScript pattern.\n\n"
+            "### Next Step\n"
+            "Build a small page that fetches and displays API data using `fetch` and `async/await`."
         )
     else:
         body = (
@@ -203,23 +236,7 @@ def _build_fallback_response(user_name: str, message: str, history: List[dict]) 
             "Share your exact learning goal and I’ll structure a crisp answer for you."
         )
 
-    last_assistant = ''
-    for item in reversed(history or []):
-        if item.get('role') == 'assistant':
-            last_assistant = str(item.get('content') or '').strip()
-            break
-
-    has_history = bool(history and len(history) > 0)
-    if has_history:
-        response = f"{body}\n\n💡 **Pro tip:** I can also create custom quizzes, explain code you're stuck on, or help you debug! Just let me know what you need!"
-    else:
-        response = f"{random.choice(intro_options)}\n\n{body}\n\n💡 **Pro tip:** I can also create custom quizzes, explain code you're stuck on, or help you debug! Just let me know what you need!"
-
-    # Avoid sending identical fallback twice in a row.
-    if last_assistant and response.strip() == last_assistant.strip():
-        response += "\n\n🔍 **Bonus:** Paste your code and I'll review it line by line and help fix any issues!"
-
-    return response
+    return body
 
 
 @router.post("/message", response_model=SuccessResponse)
@@ -237,13 +254,11 @@ async def send_chat_message(
             for m in (req.history or [])
         ]
 
-        # Check if the question is inappropriate (redirect instead of refusing)
-        if _is_inappropriate_question(req.message):
-            ai_response = _build_redirect_response(user_name)
+        if _is_inappropriate_question(req.message) or not _is_topic_related(req.message):
             return SuccessResponse(
                 success=True,
                 message="Chat response generated",
-                data={"response": ai_response},
+                data={"response": OUT_OF_SCOPE_MESSAGE},
             )
 
         # Check if user is asking for an image/diagram
