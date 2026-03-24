@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 OUT_OF_SCOPE_MESSAGE = "Sorry, I can only answer questions related to the provided learning topics."
+GREETING_RESPONSE = "Hi! How can I help you with your studies today?"
 
 INAPPROPRIATE_PATTERNS = [
     "how to kill", "how to hurt", "how to bomb", "how to hack", "how to cheat exam",
@@ -39,6 +40,11 @@ STOP_WORDS = {
     "is", "are", "be", "as", "it", "this", "that", "from", "about", "into", "using"
 }
 
+GREETING_PATTERNS = [
+    r"^\s*(hi|hello|hey|hii+|helloo+|yo|good\s+morning|good\s+afternoon|good\s+evening)\s*[!,.?]*\s*$",
+    r"^\s*(hi|hello|hey)\s+(there|sir|madam|team)\s*[!,.?]*\s*$",
+]
+
 
 def _is_inappropriate_question(message: str) -> bool:
     """Check if the question contains inappropriate content"""
@@ -47,6 +53,14 @@ def _is_inappropriate_question(message: str) -> bool:
         if pattern in msg_lower:
             return True
     return False
+
+
+def _is_greeting(message: str) -> bool:
+    """Allow simple greeting-only messages."""
+    text = (message or "").strip().lower()
+    if not text:
+        return False
+    return any(re.match(pattern, text, flags=re.IGNORECASE) for pattern in GREETING_PATTERNS)
 
 
 def _get_topic_terms() -> tuple[set[str], set[str]]:
@@ -253,6 +267,13 @@ async def send_chat_message(
             {"role": m.role, "content": m.content}
             for m in (req.history or [])
         ]
+
+        if _is_greeting(req.message):
+            return SuccessResponse(
+                success=True,
+                message="Chat response generated",
+                data={"response": GREETING_RESPONSE},
+            )
 
         if _is_inappropriate_question(req.message) or not _is_topic_related(req.message):
             return SuccessResponse(
