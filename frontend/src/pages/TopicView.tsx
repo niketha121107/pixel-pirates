@@ -178,10 +178,10 @@ export const TopicView = () => {
         if (!topicId) { setLoadingTopic(false); return; }
         setLoadingTopic(true);
         
-        // Check if we're returning from study material
-        const pauseStateKey = `timer_paused_${topicId}`;
+        // Check if we're returning from study material or PDF viewer
+        const pauseStateKey = `timer_pause_${topicId}`;
         const pauseState = localStorage.getItem(pauseStateKey);
-        const wasReturningFromStudy = pauseState === 'true';
+        const wasReturningFromStudy = pauseState === 'true' || Boolean(pauseState);
         
         // If returning from study material, resume the tracking
         if (wasReturningFromStudy && trackingStartedRef.current) {
@@ -358,27 +358,8 @@ export const TopicView = () => {
         return () => clearInterval(interval);
     }, [topicId, getTopicTime]);
 
-    // Stop tracking and save time to backend when leaving topic or completing
-    useEffect(() => {
-        return () => { 
-            if (trackingStartedRef.current) {
-                // Accumulate current session time before stopping
-                accumulatedTimeRef.current += elapsedTime;
-                stopTracking();
-                
-                // Save the time spent on this topic to the backend
-                const totalTimeSpent = Math.round(accumulatedTimeRef.current);
-                if (totalTimeSpent > 0) {
-                    progressAPI.saveTopic({
-                        topic_id: topicId,
-                        time_spent: totalTimeSpent,
-                        status: isCompleted ? 'completed' : 'in-progress',
-                    }).catch(() => {});
-                }
-                trackingStartedRef.current = false;
-            }
-        };
-    }, [topicId, isCompleted]);
+    // Timer is intentionally left running until the user completes the topic.
+    // No cleanup here — `handleComplete` will stop tracking and save time.
 
     // Resume timer if coming back from study material with saved pause state
     useEffect(() => {
@@ -397,19 +378,19 @@ export const TopicView = () => {
         }
     }, [location.pathname, topicId, resumeTracking]);
 
-    // Pause timer when navigating to study material
+    // Pause timer when navigating to study material or PDF viewer
     useEffect(() => {
-        if (location.pathname === '/study-material' && trackingStartedRef.current && !isPaused) {
+        if ((location.pathname === '/study-material' || location.pathname === '/pdf-viewer') && trackingStartedRef.current && !isPaused) {
             pauseTracking();
             wasPausedRef.current = true;
-            // Set a flag to indicate we paused for study material (so we know to resume later)
-            localStorage.setItem(`timer_paused_${topicId}`, 'true');
+            // Set a flag to indicate we paused for study material/pdf (so we know to resume later)
+            localStorage.setItem(`timer_pause_${topicId}`, 'true');
         }
     }, [location.pathname, pauseTracking, isPaused, topicId]);
 
     // Resume timer when coming back to topic view
     useEffect(() => {
-        if (topicId && wasPausedRef.current && isPaused && location.pathname !== '/study-material') {
+        if (topicId && wasPausedRef.current && isPaused && location.pathname !== '/study-material' && location.pathname !== '/pdf-viewer') {
             resumeTracking();
             wasPausedRef.current = false;
         }

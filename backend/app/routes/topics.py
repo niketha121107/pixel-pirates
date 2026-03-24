@@ -142,7 +142,7 @@ async def get_topic_details(
     topic_data["explanations"] = explanations_array
     
     # --- Transform videos to have youtubeId field ---
-    videos = topic.get("videos", [])
+    videos = topic.get("videos") or topic.get("recommendedVideos") or []
     recommended_videos = []
     for video in videos:
         if isinstance(video, dict):

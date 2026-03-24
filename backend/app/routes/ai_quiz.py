@@ -20,7 +20,7 @@ router = APIRouter()
 async def get_ai_generated_quiz(
     topic_id: str,
     question_count: int = Query(5, ge=1, le=20),
-    difficulty: str = Query("medium", regex="^(easy|medium|hard|mixed)$"),
+    difficulty: str = Query("medium", pattern="^(easy|medium|hard|mixed)$"),
     current_user: dict = Depends(get_current_user_from_token)
 ):
     """Get AI-generated quiz questions for a topic"""
@@ -125,7 +125,7 @@ async def generate_adaptive_quiz(
 async def generate_custom_topic_quiz(
     topic_name: str = Query(..., description="Any topic name for AI to generate questions about"),
     question_count: int = Query(5, ge=1, le=20, description="Number of questions to generate"),
-    difficulty: str = Query("medium", regex="^(easy|medium|hard|mixed)$", description="Question difficulty level"),
+    difficulty: str = Query("medium", pattern="^(easy|medium|hard|mixed)$", description="Question difficulty level"),
     current_user: dict = Depends(get_current_user_from_token)
 ):
     """

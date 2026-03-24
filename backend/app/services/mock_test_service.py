@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Optional
 from enum import Enum
 import json
 import httpx
-import google.generativeai as genai
+from google import genai
 from pymongo import MongoClient
 from app.core.config import settings
 
@@ -28,7 +28,7 @@ class MockTestSecurityService:
     """Handles all mock test security and generation"""
     
     def __init__(self):
-        genai.configure(api_key=settings.GEMINI_API_KEY)
+        self.genai_client = genai.Client(api_key=settings.GEMINI_API_KEY)
         self.gemini_model = settings.GEMINI_MODEL
         self.openrouter_api_key = settings.OPENROUTER_API_KEY
         self.openrouter_model = settings.OPENROUTER_MODEL
@@ -177,8 +177,10 @@ Return ONLY valid JSON array with no additional text:
     
     def _call_gemini(self, prompt: str) -> str:
         """Synchronous wrapper for Gemini API call"""
-        model = genai.GenerativeModel(self.gemini_model)
-        response = model.generate_content(prompt)
+        response = self.genai_client.models.generate_content(
+            model=self.gemini_model,
+            contents=prompt,
+        )
         return response.text
     
     def _create_fallback_questions(self, topic: str, count: int) -> List[Dict[str, Any]]:
