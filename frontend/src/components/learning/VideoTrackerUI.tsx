@@ -72,7 +72,7 @@ export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }:
         if (!playerRef.current) return;
         try {
             const state = playerRef.current.getPlayerState();
-            if (state === 1) {
+            if (state === 1) { // playing
                 playerRef.current.pauseVideo();
             } else {
                 playerRef.current.playVideo();
@@ -88,15 +88,6 @@ export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }:
         } catch (e) {}
     };
 
-    const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (!playerRef.current || duration === 0) return;
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const pct = x / rect.width;
-        const seekTo = pct * duration;
-        playerRef.current.seekTo(seekTo, true);
-    };
-
     const handleCaptionToggle = () => {
         if (!playerRef.current) return;
         try {
@@ -107,9 +98,7 @@ export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }:
                 playerRef.current.setOption('captions', 'track', { languageCode: 'en' });
             }
             setShowCaptions(!showCaptions);
-        } catch (e) {
-            setShowCaptions(!showCaptions);
-        }
+        } catch (e) {}
     };
 
     const initPlayer = () => {
@@ -128,16 +117,15 @@ export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }:
             width: '100%',
             height: '100%',
             playerVars: {
-                controls: 0,          // ← Hide ALL YouTube controls
-                rel: 0,
-                modestbranding: 1,
-                fs: 0,
-                iv_load_policy: 3,
-                cc_load_policy: 0,
-                playsinline: 1,
-                disablekb: 1,
+                controls: 0,          // ← Hide ALL default YouTube controls (requested)
+                rel: 0,               // ← Disable related videos
+                modestbranding: 1,    // ← Use minimal branding
+                iv_load_policy: 3,    // ← Hide overlays
+                fs: 0,                // Disable fullscreen (cleans up UI)
+                disablekb: 1,         // Disable keyboard to prevent native shortcuts
                 showinfo: 0,
                 autohide: 1,
+                playsinline: 1,
             },
             events: {
                 onReady: () => {
@@ -151,25 +139,21 @@ export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }:
                 onStateChange: (event: any) => {
                     if (!isMounted.current) return;
                     const state = event.data;
-                    if (state === 1) {
+                    if (state === 1) { // PLAYING
                         setIsPlaying(true);
-                        try { event.target.setPlaybackRate(1); } catch (e) {}
                         startTracking();
                     }
-                    if (state === 2) {
+                    if (state === 2) { // PAUSED
                         setIsPlaying(false);
                         stopTracking();
                     }
-                    if (state === 0) {
+                    if (state === 0) { // ENDED
                         setIsPlaying(false);
                         stopTracking();
                         setProgress(100);
                         onProgressCallback?.(100);
                         onEnded?.();
                     }
-                },
-                onPlaybackRateChange: (event: any) => {
-                    try { event.target.setPlaybackRate(1); } catch (e) {}
                 },
             },
         });
@@ -216,103 +200,123 @@ export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }:
     }
 
     return (
-        <GlassCard className="p-0 overflow-hidden">
+        <GlassCard className="p-0 overflow-hidden border-2 border-brand/20">
             {/* Video Area */}
             <div className="relative aspect-video bg-black rounded-t-xl overflow-hidden">
                 {!isLoaded && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900/90 z-10 pointer-events-none">
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900/90 z-20 pointer-events-none">
                         <div className="text-white text-center">
                             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-3" />
-                            <p className="text-sm">Loading video...</p>
+                            <p className="text-sm">Loading video API...</p>
                         </div>
                     </div>
                 )}
-                <div
-                    ref={containerRef}
-                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-                />
-                {/* Overlay to block YouTube click-through UI */}
-                <div
-                    className="absolute inset-0 z-10"
-                    style={{ background: 'transparent' }}
+                
+                {/* 
+                  Clipping Container: 
+                  We make the iframe even taller and shift it more to hide the persistent 
+                  YouTube title bar (Share, Watch Later) and bottom logo.
+                */}
+                <div 
+                    className="absolute inset-x-0 bottom-0 top-0 overflow-hidden"
+                    style={{ pointerEvents: 'auto' }}
+                >
+                    <div
+                        ref={containerRef}
+                        style={{ 
+                            position: 'absolute', 
+                            top: '-50px',     // Increased to hide full title bar
+                            left: 0, 
+                            width: '100%', 
+                            height: 'calc(100% + 100px)' 
+                        }}
+                    />
+                </div>
+
+                {/* Custom Overlay for Paused/Ended states (Hides "More videos" shelf) */}
+                {isLoaded && !isPlaying && (
+                    <div className="absolute inset-0 z-10 bg-black/60 backdrop-blur-[2px] flex items-center justify-center pointer-events-none transition-opacity duration-300">
+                        <div className="w-20 h-20 rounded-full bg-brand/10 flex items-center justify-center border border-brand/30 animate-pulse">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10 text-brand/80" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                        </div>
+                    </div>
+                )}
+                
+                {/* Interaction layer: transparent but blocks context menus and handles clicks */}
+                <div 
+                    className="absolute inset-0 z-20 cursor-pointer" 
                     onClick={handlePlayPause}
+                    onContextMenu={(e) => e.preventDefault()}
                 />
             </div>
 
-            {/* ── Custom Controls Bar ── */}
-            <div className="bg-gray-900 rounded-b-xl px-4 py-3 flex flex-col gap-2">
-
+            {/* ── Custom Control Bar ── */}
+            <div className="bg-gray-950 px-5 py-4 flex flex-col gap-4 border-t border-brand/10">
                 {/* Progress Bar */}
-                <div
-                    className="w-full h-2 bg-gray-700 rounded-full cursor-pointer relative"
-                    onClick={handleProgressClick}
-                >
-                    <div
-                        className="h-full bg-brand rounded-full transition-all"
+                <div className="relative w-full h-2 bg-gray-800 rounded-full overflow-hidden group">
+                    <div 
+                        className="h-full bg-brand rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(var(--brand-rgb),0.5)]"
                         style={{ width: `${progress}%` }}
                     />
                 </div>
 
-                {/* Controls Row */}
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-
-                        {/* Rewind 5s */}
-                        <button
+                    <div className="flex items-center gap-6">
+                        {/* Backward 5s */}
+                        <button 
                             onClick={() => handleSeek(-5)}
-                            className="text-white hover:text-brand transition-colors flex flex-col items-center"
+                            className="text-gray-400 hover:text-white transition-colors p-1"
                             title="Rewind 5s"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
-                                <text x="9" y="15" fontSize="5" fill="currentColor" fontWeight="bold">5</text>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/>
+                                <text x="14" y="22" fontSize="6" fill="currentColor" stroke="none" fontWeight="bold">5s</text>
                             </svg>
                         </button>
 
-                        {/* Play / Pause */}
-                        <button
+                        {/* Play/Pause */}
+                        <button 
                             onClick={handlePlayPause}
-                            className="w-10 h-10 rounded-full bg-brand flex items-center justify-center text-white hover:bg-brand/80 transition-colors"
-                            title={isPlaying ? 'Pause' : 'Play'}
+                            className="w-12 h-12 rounded-full bg-brand flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all shadow-lg shadow-brand/20"
                         >
                             {isPlaying ? (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
                                 </svg>
                             ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 ml-1" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M8 5v14l11-7z"/>
                                 </svg>
                             )}
                         </button>
 
                         {/* Forward 5s */}
-                        <button
+                        <button 
                             onClick={() => handleSeek(5)}
-                            className="text-white hover:text-brand transition-colors"
+                            className="text-gray-400 hover:text-white transition-colors p-1"
                             title="Forward 5s"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/>
-                                <text x="9" y="15" fontSize="5" fill="currentColor" fontWeight="bold">5</text>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M13 17l5-5-5-5M6 17l5-5-5-5"/>
+                                <text x="2" y="22" fontSize="6" fill="currentColor" stroke="none" fontWeight="bold">5s</text>
                             </svg>
                         </button>
 
-                        {/* Time */}
-                        <span className="text-xs text-gray-400 font-mono">
+                        <div className="text-xs font-mono text-gray-500 tabular-nums">
                             {formatTime(currentTime)} / {formatTime(duration)}
-                        </span>
+                        </div>
                     </div>
 
-                    {/* Caption Toggle */}
-                    <button
+                    {/* Captions Toggle */}
+                    <button 
                         onClick={handleCaptionToggle}
-                        className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                            showCaptions
-                                ? 'bg-brand text-white'
-                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        className={`text-xs px-3 py-1.5 rounded-lg font-bold border transition-all ${
+                            showCaptions 
+                                ? 'bg-brand/20 border-brand text-brand' 
+                                : 'bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-500'
                         }`}
-                        title="Toggle Captions"
                     >
                         CC
                     </button>
