@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 OUT_OF_SCOPE_MESSAGE = "Sorry, I can only answer questions related to the provided learning topics."
-GREETING_RESPONSE = "Hi! How can I help you with your studies today?"
+GREETING_RESPONSE = "Hi! I can help you with your study topics. What would you like to learn today?"
 
 INAPPROPRIATE_PATTERNS = [
     "how to kill", "how to hurt", "how to bomb", "how to hack", "how to cheat exam",
@@ -41,8 +41,8 @@ STOP_WORDS = {
 }
 
 GREETING_PATTERNS = [
-    r"^\s*(hi|hello|hey|hii+|helloo+|yo|good\s+morning|good\s+afternoon|good\s+evening)\s*[!,.?]*\s*$",
-    r"^\s*(hi|hello|hey)\s+(there|sir|madam|team)\s*[!,.?]*\s*$",
+    r"^\s*(hi|hello|hey|hii+|hiii+|helloo+|heyy+|hlo+|hlw+|yo|good\s+morning|good\s+afternoon|good\s+evening)\s*[!,.?]*\s*$",
+    r"^\s*(hi|hello|hey|hlo|hlw)\s+(there|sir|madam|team)\s*[!,.?]*\s*$",
 ]
 
 
