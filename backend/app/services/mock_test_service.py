@@ -34,21 +34,41 @@ class MockTestSecurityService:
         self.openrouter_model = settings.OPENROUTER_MODEL
         self.max_violations = 10
         self.suspension_duration = 6  # hours
+        self.history_collection = db["mock_test_question_history"]
     
     async def generate_mock_test_questions(
         self,
         topic_name: str,
         num_questions: int = 10,
-        question_types: List[str] = None
+        question_types: List[str] = None,
+        history: List[str] = None
     ) -> List[Dict[str, Any]]:
         """Generate mock test questions using Gemini, fallback to OpenRouter, then synthetic"""
         
         if question_types is None:
             question_types = ["multiple_choice", "fill_blank", "short_answer"]
         
+        # Normalize topic name for history lookup
+        normalized_topic = topic_name.strip().lower()
+        
+        history_str = ""
+        if history:
+            history_str = f"""
+### ANTI-REPEAT SYSTEM:
+- Maintain a running list of ALL questions you have asked in this entire conversation.
+- Before generating any new question, check that list.
+- If a similar question (same concept, same answer, or same wording) was already asked — SKIP it and generate a different one.
+- Never ask the same concept twice even if the wording is slightly different.
+- Treat each question as UNIQUE by tracking: topic + concept + correct answer combination.
+
+PREVIOUS QUESTIONS FOR {topic_name}:
+""" + "\n".join([f"- {h}" for h in history])
+
         prompt = f"""Generate a comprehensive mock test with {num_questions} questions for the topic: '{topic_name}'
 
-REQUIREMENTS:
+{history_str}
+
+STRICT REQUIREMENTS:
 1. Create {num_questions} questions with the following distribution:
    - {num_questions // 3} Multiple Choice (MCQ) questions
    - {num_questions // 3} Fill-in-the-Blank questions
@@ -68,6 +88,11 @@ REQUIREMENTS:
    - Progressive in difficulty (easy → medium → hard)
    - Comprehensive coverage of the topic
    - Practical and scenario-based where applicable
+   - If all easy questions on a topic are exhausted, move to medium/hard variants.
+
+4. ANTI-REPEAT FINAL CHECK:
+   - Compare every question you just wrote against the list of PREVIOUS QUESTIONS.
+   - If ANY question matches in concept, wording, or answer, REWRITE IT NOW before returning the JSON.
 
 Return ONLY valid JSON array with no additional text:
 [
@@ -184,7 +209,8 @@ Return ONLY valid JSON array with no additional text:
         return response.text
     
     def _create_fallback_questions(self, topic: str, count: int) -> List[Dict[str, Any]]:
-        """Create fallback questions if Gemini fails"""
+        """Create high-quality fallback questions if AI fails"""
+        
         questions = []
         for i in range(count):
             q_type = ["multiple_choice", "fill_blank", "short_answer"][i % 3]
@@ -192,30 +218,38 @@ Return ONLY valid JSON array with no additional text:
             if q_type == "multiple_choice":
                 questions.append({
                     "question_type": "multiple_choice",
-                    "question": f"What is a fundamental concept in {topic}? (Question {i+1})",
-                    "options": ["Option A", "Option B", "Option C", "Option D"],
-                    "correct_answer": "Option A",
-                    "explanation": f"This is a fundamental concept in {topic}.",
-                    "difficulty": ["easy", "medium", "hard"][i % 3],
-                    "points": (i % 3) + 1
+                    "question": f"Which of the following is a primary feature or concept of {topic}? (Question {i+1})",
+                    "options": [
+                        f"The core {topic} implementation strategy",
+                        f"A secondary {topic} utility function",
+                        f"A common {topic} configuration option",
+                        f"An advanced {topic} performance optimization"
+                    ],
+                    "correct_answer": f"The core {topic} implementation strategy",
+                    "explanation": f"Understanding the core implementation of {topic} is essential.",
+                    "difficulty": "medium",
+                    "points": 2,
+                    "topic": topic
                 })
             elif q_type == "fill_blank":
                 questions.append({
                     "question_type": "fill_blank",
-                    "question": f"In {topic}, the key principle is ___________. (Question {i+1})",
-                    "correct_answer": "fundamental concept",
-                    "explanation": f"The key principle involves understanding the basics of {topic}.",
-                    "difficulty": ["easy", "medium", "hard"][i % 3],
-                    "points": (i % 3) + 1
+                    "question": f"In {topic}, the most important fundamental principle to follow is ___________. (Question {i+1})",
+                    "correct_answer": f"correct {topic} usage",
+                    "explanation": f"Following {topic} best practices ensures reliable code.",
+                    "difficulty": "medium",
+                    "points": 2,
+                    "topic": topic
                 })
             else:
                 questions.append({
                     "question_type": "short_answer",
-                    "question": f"Explain how {topic} is used in real-world scenarios. (Question {i+1})",
-                    "correct_answer": "Any reasonable explanation involving practical applications",
-                    "explanation": f"{topic} has many practical applications in industry.",
-                    "difficulty": "medium",
-                    "points": 3
+                    "question": f"Briefly explain a common use-case for {topic} in modern development. (Question {i+1})",
+                    "correct_answer": f"A clear explanation of how {topic} solves specific problems.",
+                    "explanation": f"Real-world application of {topic} is a key skill.",
+                    "difficulty": "hard",
+                    "points": 3,
+                    "topic": topic
                 })
         
         return questions
@@ -353,6 +387,38 @@ Return ONLY valid JSON array with no additional text:
             "9. Results will show detailed explanations for each question.",
             "10. Your test attempts and violation records will be saved for review by administrators."
         ]
+
+    async def save_generated_questions(self, user_id: str, topic: str, questions: List[Dict[str, Any]]):
+        """Save generated question titles to prevent repetition"""
+        try:
+            # Normalize topic name
+            normalized_topic = topic.strip().lower()
+            
+            titles = [q.get("question") for q in questions if q.get("question")]
+            if titles:
+                await asyncio.to_thread(
+                    self.history_collection.update_one,
+                    {"user_id": user_id, "topic": normalized_topic},
+                    {"$push": {"questions": {"$each": titles, "$slice": -100}}},  # Keep last 100
+                    upsert=True
+                )
+        except Exception as e:
+            logger.error(f"Error saving question history: {e}")
+
+    async def get_user_question_history(self, user_id: str, topic: str) -> List[str]:
+        """Get previously generated question titles for a user and topic"""
+        try:
+            # Normalize topic name
+            normalized_topic = topic.strip().lower()
+            
+            record = await asyncio.to_thread(
+                self.history_collection.find_one,
+                {"user_id": user_id, "topic": normalized_topic}
+            )
+            return record.get("questions", []) if record else []
+        except Exception as e:
+            logger.error(f"Error fetching question history: {e}")
+            return []
 
 # Initialize service
 mock_test_service = MockTestSecurityService()
