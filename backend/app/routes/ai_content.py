@@ -22,29 +22,64 @@ async def get_ai_study_material(
 ):
     """Get AI-generated study material for a topic"""
     try:
-        from app.data import get_topic_by_id
-        topic = get_topic_by_id(topic_id)
+        from app.core.database import db
+        from bson import ObjectId
+        
+        logger.info(f"[StudyMaterial] Fetching topic: {topic_id}")
+        
+        # Query MongoDB directly for the topic
+        topic = None
+        if db.database:
+            topics_collection = db.database["topics"]
+            try:
+                # Try to find by ObjectId first
+                if len(topic_id) == 24:
+                    topic = topics_collection.find_one({"_id": ObjectId(topic_id)})
+                if not topic:
+                    topic = topics_collection.find_one({"_id": topic_id})
+            except Exception as e:
+                logger.warning(f"[StudyMaterial] ObjectId lookup failed: {e}")
+                topic = topics_collection.find_one({"_id": topic_id})
         
         if not topic:
+            logger.error(f"[StudyMaterial] Topic not found: {topic_id}")
             raise HTTPException(status_code=404, detail="Topic not found")
         
         topic_name = topic.get("topicName") or topic.get("name", "Programming Concept")
         language = topic.get("language", "Python")
         difficulty = topic.get("difficulty", "Intermediate")
         
-        logger.info(f"Generating study material for {topic_name}")
+        logger.info(f"[StudyMaterial] Generating for: {topic_name} ({language}, {difficulty})")
         
-        # Generate comprehensive study material
-        result = await ai_generator.generate_study_material(
-            topic_name=topic_name,
-            language=language,
-            difficulty=difficulty
-        )
+        # Try to generate comprehensive study material
+        try:
+            result = await ai_generator.generate_study_material(
+                topic_name=topic_name,
+                language=language,
+                difficulty=difficulty
+            )
+        except Exception as ai_error:
+            logger.warning(f"[StudyMaterial] AI generation failed with exception: {type(ai_error).__name__}: {str(ai_error)}")
+            # Return empty successful response so frontend can fall back to database
+            return SuccessResponse(
+                success=True,
+                message="Study material not available from AI, check database",
+                data={"topicId": topic_id, "topicName": topic_name, "studyMaterial": {}}
+            )
         
+        # If AI generation failed, return a basic structure (frontend will fallback to database)
         if not result.get("success"):
-            raise HTTPException(status_code=500, detail="Failed to generate study material")
+            error_msg = result.get("error", "AI generation unavailable")
+            logger.warning(f"[StudyMaterial] Generation failed: {error_msg} - returning empty response for fallback")
+            # Return empty successful response so frontend can fall back to database
+            return SuccessResponse(
+                success=True,
+                message="Study material not available from AI, check database",
+                data={"topicId": topic_id, "topicName": topic_name, "studyMaterial": {}}
+            )
         
         material = result.get("data", {})
+        logger.info(f"[StudyMaterial] Successfully generated for {topic_name}")
         
         return SuccessResponse(
             success=True,
@@ -70,8 +105,8 @@ async def get_ai_study_material(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating study material: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"[StudyMaterial] Exception: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 
 @router.get("/explanations/{topic_id}", response_model=SuccessResponse)
@@ -82,8 +117,19 @@ async def get_ai_explanations(
 ):
     """Get AI-generated explanations in multiple styles"""
     try:
-        from app.data import get_topic_by_id
-        topic = get_topic_by_id(topic_id)
+        from app.core.database import db
+        from bson import ObjectId
+        
+        # Query MongoDB directly for the topic
+        topic = None
+        if db.database:
+            topics_collection = db.database["topics"]
+            try:
+                # Try to find by ObjectId first
+                topic = topics_collection.find_one({"_id": ObjectId(topic_id) if len(topic_id) == 24 else topic_id})
+            except:
+                # If that fails, try string lookup
+                topic = topics_collection.find_one({"_id": topic_id})
         
         if not topic:
             raise HTTPException(status_code=404, detail="Topic not found")
@@ -100,10 +146,23 @@ async def get_ai_explanations(
         logger.info(f"Generating {len(requested_styles)} explanations for {topic_name}")
         
         # Generate explanations
-        explanations = await ai_generator.generate_explanations(
-            topic_name=topic_name,
-            styles=requested_styles
-        )
+        try:
+            explanations = await ai_generator.generate_explanations(
+                topic_name=topic_name,
+                styles=requested_styles
+            )
+        except Exception as ai_error:
+            logger.warning(f"[Explanations] AI generation failed: {type(ai_error).__name__}: {str(ai_error)}")
+            return SuccessResponse(
+                success=True,
+                message="Explanations not available from AI",
+                data={
+                    "topicId": topic_id,
+                    "topicName": topic_name,
+                    "explanations": [],
+                    "totalStyles": 0
+                }
+            )
         
         # Format for response
         explanations_array = [
@@ -114,8 +173,22 @@ async def get_ai_explanations(
                 "codeExample": ""
             }
             for style in requested_styles
-            if style in explanations
+            if style in explanations and explanations[style].get("content", "").strip()
         ]
+        
+        # If no explanations generated, return empty response for fallback
+        if not explanations_array:
+            logger.warning(f"[Explanations] No explanations generated for {topic_name}")
+            return SuccessResponse(
+                success=True,
+                message="Explanations not available from AI",
+                data={
+                    "topicId": topic_id,
+                    "topicName": topic_name,
+                    "explanations": [],
+                    "totalStyles": 0
+                }
+            )
         
         return SuccessResponse(
             success=True,
@@ -157,9 +230,23 @@ async def get_full_ai_content(
         logger.info(f"Generating full content package for {topic_name}")
         
         # Generate all content in parallel (conceptually)
-        study_result = await ai_generator.generate_study_material(topic_name, language, difficulty)
-        explanations = await ai_generator.generate_explanations(topic_name)
-        questions = await ai_generator.generate_quiz_questions(topic_name, quiz_questions, "mixed") if include_quiz else []
+        try:
+            study_result = await ai_generator.generate_study_material(topic_name, language, difficulty)
+        except Exception as e:
+            logger.warning(f"[FullContent] Study material generation failed: {e}")
+            study_result = {"success": False}
+        
+        try:
+            explanations = await ai_generator.generate_explanations(topic_name)
+        except Exception as e:
+            logger.warning(f"[FullContent] Explanations generation failed: {e}")
+            explanations = {}
+        
+        try:
+            questions = await ai_generator.generate_quiz_questions(topic_name, quiz_questions, "mixed") if include_quiz else []
+        except Exception as e:
+            logger.warning(f"[FullContent] Quiz generation failed: {e}")
+            questions = []
         
         return SuccessResponse(
             success=True,
@@ -173,7 +260,7 @@ async def get_full_ai_content(
                 "explanations": explanations,
                 "quiz": {
                     "questions": questions,
-                    "totalQuestions": len(questions),
+                    "totalQuestions": len(questions) if questions else 0,
                     "isGenerated": True
                 }
             }

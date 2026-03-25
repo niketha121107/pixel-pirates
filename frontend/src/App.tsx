@@ -5,7 +5,6 @@ import { SignUp } from './pages/SignUp';
 import { Dashboard } from './pages/Dashboard';
 import { TopicView } from './pages/TopicView';
 import { QuizPage } from './pages/QuizPage';
-import { Analytics } from './pages/Analytics';
 import { Progress } from './pages/Progress';
 import { UserProfile } from './pages/UserProfile';
 import { VideoRecommendations } from './pages/VideoRecommendations';
@@ -45,7 +44,6 @@ function AppRoutes() {
       <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
       <Route path="/topic" element={<ProtectedRoute><TopicView /></ProtectedRoute>} />
       <Route path="/quiz" element={<ProtectedRoute><QuizPage /></ProtectedRoute>} />
-      <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
       <Route path="/progress" element={<ProtectedRoute><Progress /></ProtectedRoute>} />
       <Route path="/notes" element={<ProtectedRoute><Notes /></ProtectedRoute>} />
       <Route path="/videos" element={<ProtectedRoute><VideoRecommendations /></ProtectedRoute>} />

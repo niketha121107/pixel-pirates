@@ -21,6 +21,7 @@ import { useUserPreferences } from '../context/UserPreferencesContext';
 import { useAuth } from '../context/AuthContext';
 import { LANGUAGES } from '../hooks/useTranslation';
 import { sanitizeMojibakeText } from '../lib/text';
+import { formatTimeDetailed, formatTimeHHMMSS } from '../utils/timeFormatter';
 
 // ─── 4 Explanation Types — The Core Feature ──────────────────────────
 type ExplanationType = 'simplified' | 'logical' | 'visual' | 'analogy';
@@ -134,15 +135,18 @@ export const TopicView = () => {
     const [videoProgress, setVideoProgress] = useState(0);
     const [videoEnded, setVideoEnded] = useState(false);
     const [isCompleted, setIsCompleted] = useState(false);
-    const [activeTab, setActiveTab] = useState<'pdf' | 'notes'>('pdf');
+    const [completionTime, setCompletionTime] = useState<string>('');
+    const [activeTab, setActiveTab] = useState<'pdf' | 'notes'>('notes');
     const [selectedExplanation, setSelectedExplanation] = useState<ExplanationType>('simplified');
     const [confidence, setConfidence] = useState(40);
-    const { saveUnderstanding } = useUnderstanding();
+    const [savedUnderstanding, setSavedUnderstanding] = useState<{ value: number; label: string } | null>(null);
+    const { saveUnderstanding, getByTopic } = useUnderstanding();
     const { addNotification } = useNotifications();
     const { startTracking, stopTracking, pauseTracking, resumeTracking, elapsedTime, isPaused, getInsight, getTotalLearningHours, getTopicTime } = useLearningTimer();
     const { preferences } = useUserPreferences();
     const location = useLocation();
     const trackingStartedRef = useRef(false);
+    const isSameTopicRef = useRef<string | null>(null);
     const accumulatedTimeRef = useRef(0);
     const wasPausedRef = useRef(false);
 
@@ -178,21 +182,11 @@ export const TopicView = () => {
         if (!topicId) { setLoadingTopic(false); return; }
         setLoadingTopic(true);
         
-        // Check if we're returning from study material or PDF viewer
-        const pauseStateKey = `timer_pause_${topicId}`;
-        const pauseState = localStorage.getItem(pauseStateKey);
-        const wasReturningFromStudy = pauseState === 'true' || Boolean(pauseState);
+        // Check if timer is already running for this topic (persistent flag in localStorage)
+        const timerRunningKey = `timer_running_${topicId}`;
+        const isTimerAlreadyRunning = Boolean(localStorage.getItem(timerRunningKey));
         
-        // If returning from study material, resume the tracking
-        if (wasReturningFromStudy && trackingStartedRef.current) {
-            // Mark that we've resumed, so don't reset on next effect
-            localStorage.removeItem(pauseStateKey);
-            wasPausedRef.current = true; // Will trigger resume in the location.pathname effect
-        } else if (!wasReturningFromStudy) {
-            // Only reset if this is a fresh topic load, not a return from study
-            trackingStartedRef.current = false;
-            accumulatedTimeRef.current = 0;
-        }
+        console.log(`[TopicView] Loading topic: ${topicId}, isTimerAlreadyRunning: ${isTimerAlreadyRunning}, trackingStartedRef: ${trackingStartedRef.current}`);
         
         topicsAPI.getById(topicId)
             .then(res => {
@@ -203,14 +197,25 @@ export const TopicView = () => {
                     setTopicOverview(topic.overview || '');
                     setIsCompleted(topic.status === 'completed');
 
-                    // Start learning timer (only once per topic or if resumed from study material)
-                    if (!trackingStartedRef.current) {
+                    // Start learning timer on each topic load
+                    if (isTimerAlreadyRunning) {
+                        // Timer is already running (e.g., returning from PDF/study materials)
+                        // Don't reset it - just keep it running
+                        console.log(`[TopicView] Timer already running for topic ${topicId} - continuing`);
+                        if (!trackingStartedRef.current) {
+                            trackingStartedRef.current = true;
+                            isSameTopicRef.current = topicId;
+                        }
+                    } else if (!trackingStartedRef.current || isSameTopicRef.current !== topicId) {
+                        // Starting fresh tracking for this topic (no timer running yet)
+                        console.log(`[TopicView] Starting fresh tracking for topic: ${topicId}`);
                         startTracking(topicId, topic.topicName || topicId);
                         trackingStartedRef.current = true;
-                    } else if (wasReturningFromStudy) {
-                        // If we're returning from study and tracking was paused, resume it now
-                        resumeTracking();
+                        isSameTopicRef.current = topicId;
+                        // Set flag to indicate timer is now running
+                        localStorage.setItem(timerRunningKey, 'true');
                     }
+                    
                     const videos = topic.recommendedVideos || [];
                     setRecommendedVideos(videos);
                     if (videos.length > 0 && videos[0].youtubeId) {
@@ -346,6 +351,16 @@ export const TopicView = () => {
         }
     }, [topicNotes, notesLang]);
 
+    // Load saved understanding level for this topic
+    useEffect(() => {
+        if (!topicId) return;
+        const savedEntry = getByTopic(parseInt(topicId));
+        if (savedEntry) {
+            setConfidence(savedEntry.value);
+            setSavedUnderstanding({ value: savedEntry.value, label: savedEntry.label });
+        }
+    }, [topicId, getByTopic]);
+
     // Keep accumulated time in sync while user is on this topic
     useEffect(() => {
         if (!topicId || !trackingStartedRef.current) return;
@@ -358,56 +373,37 @@ export const TopicView = () => {
         return () => clearInterval(interval);
     }, [topicId, getTopicTime]);
 
-    // Timer is intentionally left running until the user completes the topic.
-    // No cleanup here — `handleComplete` will stop tracking and save time.
+    // Timer runs continuously throughout the entire topic session
+    // - Starts fresh when entering a topic (00:00:00)
+    // - Continues running while viewing PDF, notes, study materials
+    // - Only stops when completed or navigating away from the topic entirely
 
-    // Resume timer if coming back from study material with saved pause state
-    useEffect(() => {
-        if (!topicId || location.pathname === '/study-material') return;
-        
-        const savedPauseKey = `timer_pause_${topicId}`;
-        const savedPause = localStorage.getItem(savedPauseKey);
-        
-        if (savedPause) {
-            try {
-                // Resume from where we paused
-                resumeTracking();
-            } catch (e) {
-                console.log('Could not resume from saved pause state');
-            }
-        }
-    }, [location.pathname, topicId, resumeTracking]);
-
-    // Pause timer when navigating to study material or PDF viewer
-    useEffect(() => {
-        if ((location.pathname === '/study-material' || location.pathname === '/pdf-viewer') && trackingStartedRef.current && !isPaused) {
-            pauseTracking();
-            wasPausedRef.current = true;
-            // Set a flag to indicate we paused for study material/pdf (so we know to resume later)
-            localStorage.setItem(`timer_pause_${topicId}`, 'true');
-        }
-    }, [location.pathname, pauseTracking, isPaused, topicId]);
-
-    // Resume timer when coming back to topic view
-    useEffect(() => {
-        if (topicId && wasPausedRef.current && isPaused && location.pathname !== '/study-material' && location.pathname !== '/pdf-viewer') {
-            resumeTracking();
-            wasPausedRef.current = false;
-        }
-    }, [location.pathname, topicId, isPaused, resumeTracking]);
 
     const insight = getInsight();
     const formatElapsed = (s: number) => {
-        const m = Math.floor(s / 60);
-        const sec = s % 60;
-        return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+        // Format as HH:MM:SS (no decimals, always show accurate real-time duration)
+        return formatTimeHHMMSS(s);
     };
 
     const handleSaveUnderstanding = (value: number, label: string) => {
-                saveUnderstanding({ topicId: parseInt(topicId) || 0, topicTitle, value, label });
+        // Save to UnderstandingContext (local storage)
+        saveUnderstanding({ topicId: parseInt(topicId) || 0, topicTitle, value, label });
+        // Update local state
+        setSavedUnderstanding({ value, label });
+        
         if (topicId) {
+            // Save to backend feedback endpoint
             const rating = Math.min(5, Math.max(1, Math.ceil(value / 20)));
             feedbackAPI.submit({ topic_id: topicId, rating, comment: label }).catch(() => {});
+            
+            // ALSO save to progress endpoint with understanding level
+            progressAPI.saveTopic({
+                topic_id: topicId,
+                understanding_level: value,
+                understanding_label: label,
+                time_spent: Math.round(elapsedTime),
+                status: 'in-progress',
+            }).catch(() => {});
         }
     };
 
@@ -416,14 +412,17 @@ export const TopicView = () => {
             // Update accumulated time
             accumulatedTimeRef.current += elapsedTime;
             const totalTimeSpent = Math.round(accumulatedTimeRef.current);
+            const formattedTime = formatTimeDetailed(totalTimeSpent);
+            const formattedTimeHHMMSS = formatTimeHHMMSS(totalTimeSpent);
             
             // Update topic status
             topicsAPI.updateStatus(topicId, { status: 'completed', score: 85 }).catch(() => {});
             
-            // Save learning time to user progress
+            // Save learning time to user progress with both formats for reference
             progressAPI.saveTopic({
                 topic_id: topicId,
                 time_spent: totalTimeSpent,
+                time_spent_formatted: formattedTimeHHMMSS, // HH:MM:SS format (no decimals)
                 status: 'completed',
             }).catch(() => {
                 console.log('Failed to save time, but continuing...');
@@ -432,11 +431,16 @@ export const TopicView = () => {
             // Stop tracking after saving
             stopTracking();
             
+            // Clear the timer running flag for this topic
+            localStorage.removeItem(`timer_running_${topicId}`);
+            
+            // Store the formatted time for display
+            setCompletionTime(formattedTime);
             setIsCompleted(true);
             addNotification({
                 type: 'congrats',
                 title: 'Congratulations! Topic completed 🎉',
-                message: `Great job finishing "${topicTitle}"! Keep up the awesome work.`,
+                message: `You have successfully completed "${topicTitle}" within ${formattedTimeHHMMSS}! Keep up the awesome work.`,
                 topicId: parseInt(topicId) || 0,
             });
         }
@@ -583,11 +587,6 @@ export const TopicView = () => {
                                     </div>
                                 </div>
                             </div>
-                            {insight.recommendation && (
-                                <p className="text-xs text-brand mt-2 bg-brand/5 px-3 py-1.5 rounded-lg">
-                                    💡 {insight.recommendation}
-                                </p>
-                            )}
                         </GlassCard>
                     </motion.div>
 
@@ -763,6 +762,7 @@ export const TopicView = () => {
                             topicId={topicId ? parseInt(topicId) : undefined}
                             topicTitle={topicTitle}
                             onSave={handleSaveUnderstanding}
+                            isSaved={savedUnderstanding !== null && savedUnderstanding.value === confidence}
                         />
                     </motion.div>
 
@@ -1054,9 +1054,16 @@ export const TopicView = () => {
                         {/* Complete Button */}
                         <div className="flex items-center gap-3">
                             {isCompleted ? (
-                                <div className="flex items-center gap-2 px-5 py-3 bg-green-50 border border-green-200 rounded-xl text-green-700 font-semibold">
-                                    <CheckCircle2 className="w-5 h-5" />
-                                    Topic Completed!
+                                <div className="flex flex-col gap-2 px-5 py-3 bg-green-50 border border-green-200 rounded-xl">
+                                    <div className="flex items-center gap-2 text-green-700 font-semibold">
+                                        <CheckCircle2 className="w-5 h-5" />
+                                        Topic Completed!
+                                    </div>
+                                    {completionTime && (
+                                        <p className="text-sm text-green-600">
+                                            ✓ Completed within <span className="font-bold">{completionTime}</span>
+                                        </p>
+                                    )}
                                 </div>
                             ) : (
                                 <button

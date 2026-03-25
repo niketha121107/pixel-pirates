@@ -5,6 +5,52 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EduTwin — Adaptive Learning Platform</title>
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    
+    <!-- YouTube Error Suppression - ULTRA AGGRESSIVE -->
+    <script>
+      (function() {
+        // Step 1: Filter function
+        const isYTError = (m) => {
+          const s = (m + '').toLowerCase();
+          return s.includes('postmessage') && (s.includes('target origin') || s.includes('does not match'));
+        };
+
+        // Step 2: Wrap console methods
+        ['error', 'warn', 'log', 'info'].forEach(method => {
+          const orig = console[method];
+          console[method] = function(...args) {
+            if (!isYTError(args[0])) orig.apply(console, args);
+          };
+        });
+
+        // Step 3: Global error handler (capture phase)
+        window.addEventListener('error', (e) => {
+          if (isYTError(e.message)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return true;
+          }
+        }, true);
+
+        // Step 4: Unhandled rejections
+        window.addEventListener('unhandledrejection', (e) => {
+          if (isYTError(e.reason)) {
+            e.preventDefault();
+            return true;
+          }
+        }, true);
+
+        // Step 5: Override global functions
+        const oldDispatch = window.dispatchEvent;
+        window.dispatchEvent = function(e) {
+          if (e.type === 'error' && isYTError(e.message)) return false;
+          return oldDispatch.call(window, e);
+        };
+
+        // Step 6: Permanently suppress by storing flag
+        window.__yt_suppressed__ = true;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

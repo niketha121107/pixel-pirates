@@ -10,6 +10,14 @@ import { BookCheck, Trophy, Target, Clock, CheckCircle2, XCircle, Brain, Frown, 
 import { motion } from 'framer-motion';
 import { useUnderstanding } from '../context/UnderstandingContext';
 import { useAuth } from '../context/AuthContext';
+import { LearningProgressGraph } from '../components/charts/LearningProgressGraph';
+
+const formatTimeHHMMSS = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+};
 
 const getLevelInfo = (val: number) => {
     if (val < 25) return { icon: Frown, color: 'text-red-500', bg: 'bg-red-50', border: 'border-red-200', label: 'Struggling', barColor: 'bg-red-500' };
@@ -25,14 +33,71 @@ export const Progress = () => {
     const [loading, setLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [completedTopics, setCompletedTopics] = useState<{ title: string; score: number; total: number; date: string; videoWatched: boolean }[]>([]);
+    const [dailyProgressData, setDailyProgressData] = useState<Array<{ day: string; xp: number }>>([]);
     const [overallStats, setOverallStats] = useState({
         totalTopics: 0,
         completedTopics: 0,
         totalQuizzes: 0,
         avgScore: 0,
-        totalHoursLearned: 0,
+        totalHoursLearned: 0, // Store total seconds
         streak: 0,
     });
+
+    // Helper function to calculate daily learning engagement for the past 7 days
+    const calculateDailyProgress = (completed: Array<{date: string}>, mockResults: Array<{createdAt?: string}>) => {
+        const today = new Date();
+        const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const dailyMap: Record<string, number> = {};
+        
+        // Initialize last 7 days
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date(today);
+            date.setDate(date.getDate() - i);
+            const dayLabel = dayLabels[date.getDay()];
+            const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
+            dailyMap[dateStr] = 0;
+        }
+
+        // Count completed topics (each topic = 1 point)
+        completed.forEach(item => {
+            if (item.date) {
+                try {
+                    const dateObj = new Date(item.date);
+                    const dateStr = dateObj.toISOString().split('T')[0];
+                    if (dailyMap.hasOwnProperty(dateStr)) {
+                        dailyMap[dateStr] += 1; // 1 point per topic
+                    }
+                } catch (e) {
+                    // ignore invalid dates
+                }
+            }
+        });
+
+        // Count quiz/mock test completions (each quiz = 0.5 points)
+        mockResults.forEach(result => {
+            if (result.createdAt) {
+                try {
+                    const dateObj = new Date(result.createdAt);
+                    const dateStr = dateObj.toISOString().split('T')[0];
+                    if (dailyMap.hasOwnProperty(dateStr)) {
+                        dailyMap[dateStr] += 0.5; // 0.5 points per quiz
+                    }
+                } catch (e) {
+                    // ignore invalid dates
+                }
+            }
+        });
+
+        // Convert to array format for chart
+        return Object.entries(dailyMap).map(([dateStr, points]) => {
+            const date = new Date(dateStr + 'T00:00:00');
+            const dayLabel = dayLabels[date.getDay()];
+            return {
+                day: dayLabel,
+                xp: Math.round(points * 10) / 10, // Round to 1 decimal
+            };
+        });
+    };
 
     // Main fetch function - extracted for reusability
     const fetchAllData = useCallback(async () => {
@@ -54,30 +119,42 @@ export const Progress = () => {
                 topicsAPI.getAll(),
             ]);
 
+            // Get topics list first to get accurate total count
+            let allTopicsCount = 0;
+            let completedTopicsFromAPI: Array<any> = [];
+            if (topicsRes.status === 'fulfilled') {
+                const allTopics = topicsRes.value.data?.data?.topics || [];
+                allTopicsCount = allTopics.length; // Accurate total count
+                completedTopicsFromAPI = allTopics.filter((t: any) => t.status === 'completed') || [];
+            }
+
             if (statsRes.status === 'fulfilled') {
                 const s = statsRes.value.data?.data?.stats;
                 if (s) {
                     const localAvg = localMock.length > 0
                         ? Math.round(localMock.reduce((sum, r) => sum + Number(r.percentage || 0), 0) / localMock.length)
                         : 0;
-                    const localHours = localMock.length > 0
-                        ? Math.round(localMock.reduce((sum, r) => sum + Number(r.timeTakenSec || 0), 0) / 3600)
+                    const localTotalSeconds = localMock.length > 0
+                        ? Math.floor(localMock.reduce((sum, r) => sum + Number(r.timeTakenSec || 0), 0)) // Store total seconds
                         : 0;
 
+                    // Convert backend hours to seconds if available, otherwise use local seconds
+                    const backendSeconds = (s.totalHours ?? 0) * 3600;
+                    const totalSeconds = Math.max(backendSeconds, localTotalSeconds);
+
                     setOverallStats({
-                        totalTopics: s.totalTopics ?? 0,
+                        totalTopics: allTopicsCount > 0 ? allTopicsCount : s.totalTopics ?? 0, // Use actual count from topics list
                         completedTopics: s.topicsCompleted ?? 0,
                         totalQuizzes: Math.max(s.quizzesTaken ?? 0, localMock.length),
                         avgScore: Math.max(s.avgScore ?? 0, localAvg),
-                        totalHoursLearned: Math.max(s.totalHours ?? 0, localHours),
+                        totalHoursLearned: totalSeconds, // Store total seconds
                         streak: s.streak ?? 0,
                     });
                 }
             }
 
             if (topicsRes.status === 'fulfilled') {
-                const topics = (topicsRes.value.data?.data?.topics || [])
-                    .filter((t: any) => t.status === 'completed')
+                const topics = completedTopicsFromAPI
                     .map((t: any) => ({
                         title: t.topicName || t.title,
                         score: t.score ?? 0,
@@ -97,7 +174,12 @@ export const Progress = () => {
                         videoWatched: true,
                     }));
 
-                setCompletedTopics(topics.length > 0 ? topics : localCompleted);
+                // Calculate and set daily progress data based on actual user performance
+                const allCompleted = topics.length > 0 ? topics : localCompleted;
+                const dailyData = calculateDailyProgress(allCompleted, localMock);
+                setDailyProgressData(dailyData);
+                
+                setCompletedTopics(allCompleted);
             }
         } catch (error) {
             console.error('Error fetching progress data:', error);
@@ -202,8 +284,8 @@ export const Progress = () => {
                                 <Clock className="w-6 h-6 text-orange-500" />
                             </div>
                             <div>
-                                <p className="text-sm text-gray-500">Hours Learned</p>
-                                <p className="text-2xl font-bold text-gray-800">{overallStats.totalHoursLearned}h</p>
+                                <p className="text-sm text-gray-500">Time Learned</p>
+                                <p className="text-2xl font-bold text-gray-800">{formatTimeHHMMSS(overallStats.totalHoursLearned)}</p>
                             </div>
                         </GlassCard>
 
@@ -218,12 +300,12 @@ export const Progress = () => {
                         </GlassCard>
                     </motion.div>
 
-                    {/* Progress Ring + Summary */}
+                    {/* Progress Ring + Learning Progress Graph */}
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.2 }}
-                        className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+                        className="grid grid-cols-1 lg:grid-cols-2 gap-6"
                     >
                         <GlassCard className="p-8 flex flex-col items-center justify-center gap-4">
                             <ProgressRing progress={completionPercentage} size={160} strokeWidth={12}>
@@ -237,60 +319,70 @@ export const Progress = () => {
                             </p>
                         </GlassCard>
 
-                        <div className="lg:col-span-2 space-y-4">
-                            <h2 className="text-xl font-bold text-gray-800">Completed Topics & Scores</h2>
-                            <div className="space-y-3">
-                                {completedTopics.map((topic, i) => {
-                                    const scorePercent = Math.round((topic.score / topic.total) * 100);
-                                    return (
-                                        <motion.div
-                                            key={i}
-                                            initial={{ opacity: 0, x: -10 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            transition={{ delay: 0.3 + i * 0.08 }}
-                                        >
-                                            <GlassCard className="p-4 flex items-center gap-4">
-                                                <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-                                                    scorePercent >= 80 ? 'bg-candy-mint/50' : scorePercent >= 50 ? 'bg-candy-lemon/50' : 'bg-candy-pink/50'
+                        <div>
+                            <LearningProgressGraph data={dailyProgressData} />
+                        </div>
+                    </motion.div>
+
+                    {/* Completed Topics & Scores */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.3 }}
+                        className="space-y-4"
+                    >
+                        <h2 className="text-xl font-bold text-gray-800">Completed Topics & Scores</h2>
+                        <div className="space-y-3">
+                            {completedTopics.map((topic, i) => {
+                                const scorePercent = Math.round((topic.score / topic.total) * 100);
+                                return (
+                                    <motion.div
+                                        key={i}
+                                        initial={{ opacity: 0, x: -10 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        transition={{ delay: 0.4 + i * 0.08 }}
+                                    >
+                                        <GlassCard className="p-4 flex items-center gap-4">
+                                            <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
+                                                scorePercent >= 80 ? 'bg-candy-mint/50' : scorePercent >= 50 ? 'bg-candy-lemon/50' : 'bg-candy-pink/50'
+                                            }`}>
+                                                {scorePercent >= 80 ? (
+                                                    <CheckCircle2 className="w-5 h-5 text-green-600" />
+                                                ) : scorePercent >= 50 ? (
+                                                    <Target className="w-5 h-5 text-yellow-600" />
+                                                ) : (
+                                                    <XCircle className="w-5 h-5 text-red-600" />
+                                                )}
+                                            </div>
+
+                                            <div className="flex-1 min-w-0">
+                                                <h3 className="font-semibold text-gray-800 truncate">{topic.title}</h3>
+                                                <p className="text-xs text-gray-400">{topic.date}</p>
+                                            </div>
+
+                                            <div className="text-right flex-shrink-0">
+                                                <span className={`text-lg font-bold ${
+                                                    scorePercent >= 80 ? 'text-green-600' : scorePercent >= 50 ? 'text-yellow-600' : 'text-red-600'
                                                 }`}>
-                                                    {scorePercent >= 80 ? (
-                                                        <CheckCircle2 className="w-5 h-5 text-green-600" />
-                                                    ) : scorePercent >= 50 ? (
-                                                        <Target className="w-5 h-5 text-yellow-600" />
-                                                    ) : (
-                                                        <XCircle className="w-5 h-5 text-red-600" />
-                                                    )}
-                                                </div>
+                                                    {topic.score}/{topic.total}
+                                                </span>
+                                                <p className="text-xs text-gray-400">Quiz Score</p>
+                                            </div>
 
-                                                <div className="flex-1 min-w-0">
-                                                    <h3 className="font-semibold text-gray-800 truncate">{topic.title}</h3>
-                                                    <p className="text-xs text-gray-400">{topic.date}</p>
+                                            <div className="hidden sm:block w-24">
+                                                <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                                                    <div
+                                                        className={`h-full rounded-full ${
+                                                            scorePercent >= 80 ? 'bg-green-500' : scorePercent >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                                                        }`}
+                                                        style={{ width: `${scorePercent}%` }}
+                                                    />
                                                 </div>
-
-                                                <div className="text-right flex-shrink-0">
-                                                    <span className={`text-lg font-bold ${
-                                                        scorePercent >= 80 ? 'text-green-600' : scorePercent >= 50 ? 'text-yellow-600' : 'text-red-600'
-                                                    }`}>
-                                                        {topic.score}/{topic.total}
-                                                    </span>
-                                                    <p className="text-xs text-gray-400">Quiz Score</p>
-                                                </div>
-
-                                                <div className="hidden sm:block w-24">
-                                                    <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-                                                        <div
-                                                            className={`h-full rounded-full ${
-                                                                scorePercent >= 80 ? 'bg-green-500' : scorePercent >= 50 ? 'bg-yellow-500' : 'bg-red-500'
-                                                            }`}
-                                                            style={{ width: `${scorePercent}%` }}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </GlassCard>
-                                        </motion.div>
-                                    );
-                                })}
-                            </div>
+                                            </div>
+                                        </GlassCard>
+                                    </motion.div>
+                                );
+                            })}
                         </div>
                     </motion.div>
 
@@ -298,7 +390,7 @@ export const Progress = () => {
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.4 }}
+                        transition={{ delay: 0.5 }}
                         className="space-y-4"
                     >
                         <div className="flex items-center gap-3">
@@ -347,7 +439,7 @@ export const Progress = () => {
                                                 key={entry.topicId}
                                                 initial={{ opacity: 0, y: 10 }}
                                                 animate={{ opacity: 1, y: 0 }}
-                                                transition={{ delay: 0.5 + i * 0.06 }}
+                                                transition={{ delay: 0.6 + i * 0.06 }}
                                             >
                                                 <GlassCard className={`p-4 border-l-4 ${info.border}`}>
                                                     <div className="flex items-start gap-3">

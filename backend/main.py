@@ -7,7 +7,7 @@ from datetime import datetime, date  # viewable article URLs
 import uvicorn
 from app.models import *
 from app.data import get_mock_data, initialize_data
-from app.routes import auth, users, topics, quiz, videos, leaderboard, analytics, search, chat, ai_quiz, ai_content
+from app.routes import auth, users, topics, quiz, videos, leaderboard, search, chat, ai_quiz, ai_content
 from app.routes import database as db_routes
 from app.routes import notes, feedback, progress
 from app.routes import adaptive, study_materials, mock_test, content_delivery
@@ -85,7 +85,6 @@ app.include_router(ai_quiz.router, prefix="/api/ai/quiz", tags=["AI-Generated Qu
 app.include_router(ai_content.router, prefix="/api/ai/content", tags=["AI-Generated Content"])
 app.include_router(videos.router, prefix="/api/videos", tags=["videos"])
 app.include_router(leaderboard.router, prefix="/api/leaderboard", tags=["leaderboard"])
-app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(search.router, prefix="/api/search", tags=["search"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(db_routes.router, prefix="/api/database", tags=["database"])
@@ -149,7 +148,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app", 
         host="0.0.0.0", 
-        port=5000,
+        port=8000,
         reload=True,
         log_level="info"
     )

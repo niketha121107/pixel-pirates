@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../../lib/utils';
 import { Frown, Meh, Smile, Sparkles, Save, CheckCircle2 } from 'lucide-react';
@@ -10,6 +10,7 @@ interface ConfidenceSliderProps {
     topicId?: number;
     topicTitle?: string;
     onSave?: (value: number, label: string) => void;
+    isSaved?: boolean; // Whether the current value has already been saved
 }
 
 const getEmoticonInfo = (val: number) => {
@@ -19,15 +20,33 @@ const getEmoticonInfo = (val: number) => {
     return { icon: Sparkles, color: 'text-status-success', text: 'Mastered it!' };
 };
 
-export const ConfidenceSlider = ({ value, onChange, onSave }: ConfidenceSliderProps) => {
-    const [saved, setSaved] = useState(false);
+export const ConfidenceSlider = ({ value, onChange, onSave, isSaved }: ConfidenceSliderProps) => {
+    const [saved, setSaved] = useState(isSaved || false);
+    const savedValueRef = useRef(value); // Track the value when it was saved
+
+    // Update saved state if isSaved prop changes (e.g., returning from another page)
+    useEffect(() => {
+        if (isSaved) {
+            setSaved(true);
+            savedValueRef.current = value;
+        }
+    }, [isSaved, value]);
 
     const { icon: Emoticon, color, text } = getEmoticonInfo(value);
 
     const handleSave = () => {
         onSave?.(value, text);
         setSaved(true);
+        savedValueRef.current = value; // Remember this value as saved
         setTimeout(() => setSaved(false), 2000);
+    };
+
+    const handleSliderChange = (newValue: number) => {
+        onChange(newValue);
+        // Only clear saved if the value actually changes from what was saved
+        if (newValue !== savedValueRef.current) {
+            setSaved(false);
+        }
     };
 
     return (
@@ -55,7 +74,7 @@ export const ConfidenceSlider = ({ value, onChange, onSave }: ConfidenceSliderPr
                     min="0"
                     max="100"
                     value={value}
-                    onChange={(e) => { onChange(parseInt(e.target.value)); setSaved(false); }}
+                    onChange={(e) => handleSliderChange(parseInt(e.target.value))}
                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand/50 z-10 relative"
                     style={{
                         background: `linear-gradient(to right, #ec4899 0%, #f97316 ${value}%, rgba(255,255,255,0.1) ${value}%)`

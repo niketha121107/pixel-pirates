@@ -97,16 +97,7 @@ export const leaderboardAPI = {
         api.get(`/leaderboard/language/${language}`),
 };
 
-// ── Analytics ────────────────────────────────────────────────────────
-export const analyticsAPI = {
-    dashboard: () => api.get('/analytics/dashboard'),
-    progress: (period?: string) =>
-        api.get('/analytics/progress', { params: period ? { period } : {} }),
-    performance: () => api.get('/analytics/performance'),
-    streaks: () => api.get('/analytics/streaks'),
-};
-
-// ── Search ───────────────────────────────────────────────────────────
+// ── Search ───────────────────────────────────────────────────────
 export const searchAPI = {
     recent: () => api.get('/search/recent'),
     search: (query: string) => api.post('/search', { query }),

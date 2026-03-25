@@ -40,6 +40,10 @@ class AIContentGenerator:
     ) -> str:
         """Call Gemini API with retry logic"""
         
+        if not self.api_key:
+            logger.error("Gemini API key not configured")
+            raise Exception("Gemini API key not configured")
+        
         for attempt in range(retries):
             try:
                 url = f"{self.base_url}/models/{self.model}:generateContent"
@@ -59,33 +63,40 @@ class AIContentGenerator:
                     }
                 }
                 
+                logger.info(f"[Gemini] Calling API attempt {attempt + 1}/{retries}...")
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     response = await client.post(url, params=params, json=payload)
                     
                     if response.status_code == 200:
                         data = response.json()
                         if "candidates" in data and len(data["candidates"]) > 0:
-                            return data["candidates"][0]["content"]["parts"][0]["text"]
+                            result = data["candidates"][0]["content"]["parts"][0]["text"]
+                            logger.info(f"[Gemini] Success: {len(result)} chars returned")
+                            return result
+                        else:
+                            logger.warning(f"[Gemini] No candidates in response: {data}")
                     
                     elif response.status_code == 429:  # Rate limit
+                        logger.warning(f"[Gemini] Rate limited, attempt {attempt + 1}/{retries}")
                         if attempt < retries - 1:
                             await asyncio.sleep(2 ** attempt)  # Exponential backoff
                             continue
                     
-                    logger.error(f"Gemini API error {response.status_code}: {response.text[:200]}")
+                    logger.error(f"[Gemini] API error {response.status_code}: {response.text[:500]}")
                     
             except asyncio.TimeoutError:
-                logger.warning(f"Timeout attempt {attempt + 1}/{retries}")
+                logger.warning(f"[Gemini] Timeout attempt {attempt + 1}/{retries}")
                 if attempt < retries - 1:
                     await asyncio.sleep(1)
                     continue
             except Exception as e:
-                logger.error(f"Error calling Gemini: {e}")
+                logger.error(f"[Gemini] Exception attempt {attempt + 1}: {type(e).__name__}: {str(e)}")
                 if attempt < retries - 1:
                     await asyncio.sleep(1)
                     continue
         
-        return ""
+        logger.error(f"[Gemini] All {retries} attempts failed")
+        raise Exception("Failed to generate content from Gemini API")
     
     def _clean_json(self, text: str) -> str:
         """Extract JSON from response, removing markdown code blocks"""
@@ -122,11 +133,18 @@ Provide information as valid JSON with these fields:
 Return ONLY valid JSON object, no markdown code blocks."""
         
         try:
+            logger.info(f"[StudyMaterial] Generating for: {topic_name}")
             response = await self.call_gemini(prompt, max_tokens=2048)
+            
+            if not response:
+                raise Exception("Empty response from Gemini API")
+            
             response = self._clean_json(response)
+            logger.info(f"[StudyMaterial] Response length: {len(response)}")
             
             try:
                 data = json.loads(response)
+                logger.info(f"[StudyMaterial] Parsed JSON successfully")
                 
                 # Ensure all expected fields exist
                 material = {
@@ -145,12 +163,12 @@ Return ONLY valid JSON object, no markdown code blocks."""
                     "generatedAt": datetime.now().isoformat()
                 }
             except json.JSONDecodeError as je:
-                logger.error(f"Failed to parse study material JSON: {je}")
-                logger.error(f"Response: {response[:200]}")
-                return {"success": False, "error": "Failed to parse JSON response"}
+                logger.error(f"[StudyMaterial] JSON parse error: {je}")
+                logger.error(f"[StudyMaterial] Response: {response[:300]}")
+                raise Exception(f"Failed to parse study material JSON: {str(je)}")
         
         except Exception as e:
-            logger.error(f"Error generating study material: {e}")
+            logger.error(f"[StudyMaterial] Error generating: {type(e).__name__}: {str(e)}")
             return {"success": False, "error": str(e)}
     
     async def generate_explanations(

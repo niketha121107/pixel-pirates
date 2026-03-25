@@ -92,7 +92,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-The API will be available at `http://localhost:5000`
+The API will be available at `http://localhost:8000`
 
 #### Frontend
 
@@ -117,7 +117,7 @@ docker-compose up --build
 
 ## API Documentation
 
-Once the backend is running, visit `http://localhost:5000/docs` for the interactive API documentation (Swagger UI).
+Once the backend is running, visit `http://localhost:8000/docs` for the interactive API documentation (Swagger UI).
 
 ## Environment Variables
 
@@ -131,7 +131,7 @@ JWT_SECRET=your_secret_key
 
 ### Frontend (.env)
 ```
-VITE_API_URL=http://localhost:5000
+VITE_API_URL=http://localhost:8000
 ```
 
 ## License

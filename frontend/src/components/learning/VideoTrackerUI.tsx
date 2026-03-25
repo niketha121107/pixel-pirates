@@ -56,6 +56,33 @@ export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }:
 
     const videoId = getVideoId(url);
 
+    // Suppress YouTube postMessage errors at component level
+    useEffect(() => {
+        if ((window as any).__yt_error_suppression_active) return;
+        (window as any).__yt_error_suppression_active = true;
+
+        const origError = console.error;
+        console.error = function(...args: any[]) {
+            const msg = String(args[0] || '').toLowerCase();
+            if (!(msg.includes('postmessage') && msg.includes('target origin'))) {
+                origError.apply(console, args);
+            }
+        };
+
+        const origWarn = console.warn;
+        console.warn = function(...args: any[]) {
+            const msg = String(args[0] || '').toLowerCase();
+            if (!(msg.includes('postmessage') && msg.includes('target origin'))) {
+                origWarn.apply(console, args);
+            }
+        };
+
+        return () => {
+            console.error = origError;
+            console.warn = origWarn;
+        };
+    }, []);
+
     useEffect(() => {
         if (!videoId || !containerRef.current) return;
 
@@ -80,75 +107,82 @@ export const VideoTrackerUI = ({ url, onProgress: onProgressCallback, onEnded }:
         const initPlayer = () => {
             if (!containerRef.current) return;
 
-            // Create target directly inside container
-            const targetDiv = document.createElement('div');
-            targetDiv.id = `yt-player-target-${Date.now()}`;
-            targetDiv.style.width = '100%';
-            targetDiv.style.height = '100%';
-            containerRef.current.innerHTML = '';
-            containerRef.current.appendChild(targetDiv);
+            try {
+                // Create target directly inside container
+                const targetDiv = document.createElement('div');
+                targetDiv.id = `yt-player-target-${Date.now()}`;
+                targetDiv.style.width = '100%';
+                targetDiv.style.height = '100%';
+                containerRef.current.innerHTML = '';
+                containerRef.current.appendChild(targetDiv);
 
-            playerRef.current = new window.YT.Player(targetDiv.id, {
-                videoId: videoId,
-                playerVars: {
-                    controls: 0,           // Hide all default YouTube controls
-                    disablekb: 1,          // Disable keyboard controls to prevent default shortcuts
-                    modestbranding: 1,     // Reduce YouTube branding
-                    rel: 0,                // Do not show related videos from other channels
-                    showinfo: 0,           // Deprecated but still used sometimes; hides video title
-                    iv_load_policy: 3,     // Hide video annotations
-                    fs: 0,                 // Hide fullscreen button
-                    cc_load_policy: 0,     // Closed captions off by default
-                    playsinline: 1         // Play inline on mobile
-                },
-                events: {
-                    onReady: (event: any) => {
-                        setIsReady(true);
-                        setDuration(event.target.getDuration());
+                playerRef.current = new window.YT.Player(targetDiv.id, {
+                    videoId: videoId,
+                    playerVars: {
+                        controls: 0,           // Hide all default YouTube controls
+                        disablekb: 1,          // Disable keyboard controls to prevent default shortcuts
+                        modestbranding: 1,     // Reduce YouTube branding
+                        rel: 0,                // Do not show related videos from other channels
+                        showinfo: 0,           // Deprecated but still used sometimes; hides video title
+                        iv_load_policy: 3,     // Hide video annotations
+                        fs: 0,                 // Hide fullscreen button
+                        cc_load_policy: 0,     // Closed captions off by default
+                        playsinline: 1         // Play inline on mobile
                     },
-                    onStateChange: (event: any) => {
-                        const State = window.YT.PlayerState;
-                        
-                        if (event.data === State.PLAYING) {
-                            setIsPlaying(true);
+                    events: {
+                        onReady: (event: any) => {
+                            setIsReady(true);
+                            setDuration(event.target.getDuration());
+                        },
+                        onStateChange: (event: any) => {
+                            const State = window.YT.PlayerState;
                             
-                            if (progressIntervalRef.current) {
-                                clearInterval(progressIntervalRef.current);
-                            }
-                            
-                            progressIntervalRef.current = setInterval(() => {
-                                if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
-                                    const time = playerRef.current.getCurrentTime();
-                                    const dur = playerRef.current.getDuration();
-                                    setCurrentTime(time);
-                                    
-                                    if (dur > 0) {
-                                        const percentage = (time / dur) * 100;
-                                        callbacksRef.current.onProgress?.(Math.min(percentage, 100));
-                                    }
+                            if (event.data === State.PLAYING) {
+                                setIsPlaying(true);
+                                
+                                if (progressIntervalRef.current) {
+                                    clearInterval(progressIntervalRef.current);
                                 }
-                            }, 500);
-                            
-                        } else {
-                            setIsPlaying(false);
-                            if (progressIntervalRef.current) {
-                                clearInterval(progressIntervalRef.current);
+                                
+                                progressIntervalRef.current = setInterval(() => {
+                                    if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
+                                        const time = playerRef.current.getCurrentTime();
+                                        const dur = playerRef.current.getDuration();
+                                        setCurrentTime(time);
+                                        
+                                        if (dur > 0) {
+                                            const percentage = (time / dur) * 100;
+                                            callbacksRef.current.onProgress?.(Math.min(percentage, 100));
+                                        }
+                                    }
+                                }, 500);
+                                
+                            } else {
+                                setIsPlaying(false);
+                                if (progressIntervalRef.current) {
+                                    clearInterval(progressIntervalRef.current);
+                                }
                             }
-                        }
 
-                        if (event.data === State.ENDED) {
-                            setCurrentTime(event.target.getDuration());
-                            callbacksRef.current.onProgress?.(100);
-                            callbacksRef.current.onEnded?.();
+                            if (event.data === State.ENDED) {
+                                setCurrentTime(event.target.getDuration());
+                                callbacksRef.current.onProgress?.(100);
+                                callbacksRef.current.onEnded?.();
+                            }
+                        },
+                        onError: (e: any) => {
+                            console.error('YouTube player error:', e);
+                            setHasError(true);
+                            setIsReady(true);
                         }
-                    },
-                    onError: (e: any) => {
-                        console.error('YouTube player error:', e);
-                        setHasError(true);
-                        setIsReady(true);
                     }
-                }
-            });
+                });
+            } catch (error) {
+                // Handle any errors during player initialization (especially on localhost)
+                console.error('Failed to initialize YouTube player:', error);
+                setHasError(true);
+                setIsReady(true);
+            }
         };
 
         if (!window.YT) {

@@ -34,7 +34,7 @@ class Settings:
     SECRET_KEY: str = os.getenv("SECRET_KEY", "fallback-secret-key")
     
     # Application Configuration
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:5000")
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000")
     CORS_ORIGINS: List[str] = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
     
     # Database Configuration

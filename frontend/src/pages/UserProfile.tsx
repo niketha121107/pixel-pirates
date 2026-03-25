@@ -373,11 +373,10 @@ export const UserProfile = () => {
                                 <Zap className="w-5 h-5 text-brand" />
                                 Quick Actions
                             </h3>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                 {[
                                     { label: 'Topics', to: '/videos', icon: <BookOpen className="w-5 h-5" />, color: 'from-brand to-pink-400' },
                                     { label: 'Notes', to: '/notes', icon: <Star className="w-5 h-5" />, color: 'from-yellow-400 to-amber-400' },
-                                    { label: 'Analytics', to: '/analytics', icon: <Target className="w-5 h-5" />, color: 'from-blue-400 to-indigo-400' },
                                     { label: 'Progress', to: '/progress', icon: <Star className="w-5 h-5" />, color: 'from-emerald-400 to-teal-400' },
                                 ].map((action) => (
                                     <Link key={action.label} to={action.to}>

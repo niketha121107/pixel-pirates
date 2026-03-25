@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
+import { progressAPI } from '../services/api';
+import { formatTimeHHMMSS } from '../utils/timeFormatter';
 
 interface TimingRecord {
     topicId: string;
@@ -28,6 +30,8 @@ interface LearningTimerContextType {
     getInsight: () => MindsetInsight;
     getTopicTime: (topicId: string) => number;
     getTotalLearningHours: () => number;
+    getFormattedElapsedTime: () => string; // HH:MM:SS format
+    getFormattedTopicTime: (topicId: string) => string; // HH:MM:SS format
 }
 
 const LearningTimerContext = createContext<LearningTimerContextType | undefined>(undefined);
@@ -64,6 +68,24 @@ export function LearningTimerProvider({ children }: { children: ReactNode }) {
         }, 1000);
         return () => clearInterval(interval);
     }, [startTime, isPaused]);
+
+    // Auto-save time to database every 30 seconds
+    useEffect(() => {
+        if (!currentTopic || isPaused || !startTime) return;
+        
+        const autoSaveInterval = setInterval(() => {
+            const totalTime = Math.round(elapsedTime);
+            progressAPI.saveTopic({
+                topic_id: currentTopic,
+                time_spent: totalTime,
+                status: 'in-progress',
+            }).catch(err => {
+                console.log('[Timer Context] Auto-save failed, will retry next interval:', err);
+            });
+        }, 30000); // Auto-save every 30 seconds
+        
+        return () => clearInterval(autoSaveInterval);
+    }, [currentTopic, elapsedTime, isPaused, startTime]);
 
     const startTracking = useCallback((topicId: string, topicName: string) => {
         // If already tracking, stop and save previous session first
@@ -127,8 +149,9 @@ export function LearningTimerProvider({ children }: { children: ReactNode }) {
                 try {
                     const pauseData = JSON.parse(savedPause);
                     resumeFromTime = pauseData.pausedAt;
+                    console.log(`[Timer Context] Resuming from: ${resumeFromTime}s`);
                 } catch (e) {
-                    // Use current pausedAt if parsing fails
+                    console.log(`[Timer Context] Failed to parse pause data, using pausedAt: ${trackingRef.current.pausedAt}s`);
                 }
             }
             
@@ -136,10 +159,29 @@ export function LearningTimerProvider({ children }: { children: ReactNode }) {
             const adjustedStartTime = Date.now() - resumeFromTime * 1000;
             setStartTime(adjustedStartTime);
             setIsPaused(false);
-            // Clear the saved pause state
-            localStorage.removeItem(savedPauseKey);
+            // Do NOT clear localStorage here - let TopicView clear it after successful resume
+            console.log(`[Timer Context] Timer resumed. Will continue from ${resumeFromTime}s`);
         }
     }, []);
+
+    // Handle tab visibility changes - pause when user switches tabs, resume when they come back
+    // This must come AFTER pauseTracking and resumeTracking are defined
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                // Tab is now hidden - pause the timer
+                pauseTracking();
+            } else {
+                // Tab is now visible - resume the timer
+                if (currentTopic && isPaused) {
+                    resumeTracking();
+                }
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, [currentTopic, isPaused, pauseTracking, resumeTracking]);
 
     const getTopicTime = useCallback((topicId: string) => {
         return records
@@ -196,6 +238,15 @@ export function LearningTimerProvider({ children }: { children: ReactNode }) {
         }
     }, [records]);
 
+    const getFormattedElapsedTime = useCallback(() => {
+        return formatTimeHHMMSS(elapsedTime);
+    }, [elapsedTime]);
+
+    const getFormattedTopicTime = useCallback((topicId: string) => {
+        const totalSeconds = getTopicTime(topicId);
+        return formatTimeHHMMSS(totalSeconds);
+    }, [getTopicTime]);
+
     return (
         <LearningTimerContext.Provider value={{
             startTracking,
@@ -209,6 +260,8 @@ export function LearningTimerProvider({ children }: { children: ReactNode }) {
             getInsight,
             getTopicTime,
             getTotalLearningHours,
+            getFormattedElapsedTime,
+            getFormattedTopicTime,
         }}>
             {children}
         </LearningTimerContext.Provider>

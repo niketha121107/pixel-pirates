@@ -44,6 +44,7 @@ interface TopicItem {
     score: number;
     total: number;
     difficulty?: string;
+    time_spent_formatted?: string;
 }
 
 export const VideoRecommendations = () => {
@@ -140,6 +141,7 @@ export const VideoRecommendations = () => {
                     score: t.score ?? 0,
                     total: t.total ?? 100,
                     difficulty: t.difficulty || 'Beginner',
+                    time_spent_formatted: t.time_spent_formatted || undefined,
                 }));
                 setAllTopics(topics);
             } catch {
@@ -373,9 +375,11 @@ export const VideoRecommendations = () => {
                                                                             <h3 className={`font-semibold truncate text-sm ${
                                                                                 isFullyCompleted ? 'text-green-800' : 'text-gray-800'
                                                                             }`}>{topic.title}</h3>
-                                                                            {videoWatchPercent > 0 && !isFullyCompleted && (
+                                                                            {isFullyCompleted && topic.time_spent_formatted ? (
+                                                                                <p className="text-xs text-green-600 mt-1 font-medium">Time taken: {topic.time_spent_formatted}</p>
+                                                                            ) : videoWatchPercent > 0 && !isFullyCompleted ? (
                                                                                 <p className="text-xs text-gray-500 mt-1">Video: {Math.round(videoWatchPercent)}% watched</p>
-                                                                            )}
+                                                                            ) : null}
                                                                         </div>
 
                                                                         {/* Score or Arrow */}
