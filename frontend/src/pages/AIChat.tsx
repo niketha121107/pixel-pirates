@@ -459,14 +459,14 @@ export const AIChat = () => {
                                         }`}>
                                             {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                                         </div>
-                                        <div className={`max-w-[75%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                                            <div className={`px-4 py-3 rounded-2xl text-sm ${
+                                        <div className={`max-w-[75%] flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                                            <div className={`px-4 py-3 rounded-2xl text-sm break-words overflow-hidden ${
                                                 msg.role === 'user'
                                                     ? 'bg-brand text-white rounded-tr-md'
                                                     : 'bg-white border border-gray-100 text-gray-800 rounded-tl-md shadow-sm'
                                             }`}>
                                                 {msg.role === 'assistant' ? (
-                                                    <div className="prose prose-sm max-w-none prose-p:my-2 prose-pre:my-2 prose-pre:rounded-lg prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-code:text-pink-600 prose-li:my-0">
+                                                    <div className="prose prose-sm max-w-none prose-p:my-2 prose-pre:my-2 prose-pre:rounded-lg prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-pre:overflow-x-auto prose-code:text-pink-600 prose-code:break-words prose-li:my-0 prose-h3:my-2 prose-h3:text-base prose-strong:font-semibold">
                                                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                                             {msg.translatedContent && currentLang !== 'en'
                                                                 ? msg.translatedContent
@@ -474,7 +474,7 @@ export const AIChat = () => {
                                                         </ReactMarkdown>
                                                     </div>
                                                 ) : (
-                                                    <div className="whitespace-pre-wrap">
+                                                    <div className="whitespace-pre-wrap break-words">
                                                         {msg.content}
                                                     </div>
                                                 )}

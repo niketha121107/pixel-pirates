@@ -283,7 +283,11 @@ class AdaptiveEngineService:
 
         try:
             # Step 1: Generate response in English first for consistency
-            conversation_context = f"You are EduTwin AI, a warm and supportive learning companion. Student name: {user_name}. "
+            conversation_context = (
+                f"You are EduTwin AI, a friendly and knowledgeable learning tutor. Student name: {user_name}. "
+                "Your mission: Help students learn and understand concepts deeply through clear, structured explanations. "
+                "Be warm, encouraging, and use simple language. For learning topics, provide thorough, accurate explanations."
+            )
             has_history = bool(history and len(history) > 0)
             
             if history:
@@ -298,36 +302,195 @@ class AdaptiveEngineService:
 Respond to this message from {user_name} in ENGLISH FIRST:
 {message}
 
-Guidelines:
-- Be warm, encouraging, and patient
-- Give a direct answer first, then details
-- Keep it concise (about 80-180 words) unless user explicitly asks for a deep explanation
-- Use practical, working examples
-- Include code snippets only when useful
-- Use light markdown for readability
-- Use at most 1-2 emojis
-- End with encouragement or a relevant follow-up question
-- If this is a follow-up message, do NOT greet again (no Hey/Hi/Hello opener)
-- Never re-introduce yourself after the first turn
+GEN Z SLANG TRANSLATION GUIDE (FOR UNDERSTANDING ONLY):
+Understand these terms but respond professionally:
+- "no cap" / "facts" / "fax" = That's true / Agreed / Really?
+- "slay" / "ate" / "bussin" = Great job / That's awesome / That's really good
+- "mid" / "trash" = Not good / Mediocre
+- "lowkey" / "highkey" = Sort of / Really
+- "it's giving" / "it's giving off" = It seems like / It looks like
+- "dope" / "lit" / "fire" = Cool / Awesome
+- "vibe" / "vibes" = Feeling / Mood
+- "bet" = Okay / Understood / Sure
+- "periodt" / "point blank" = That's final / No more debate
+- "salty" = Upset / Bitter
+- "flex" = Show off
+- "sus" / "sus behavior" = Suspicious / Seems off
+- "fr fr" / "for real" = For real / Seriously
+- "ngl" = Not gonna lie
+- "idk" / "idek" = I don't know / I don't even know
+- "nah" = No
+- "ong" / "on god" = On god / For real
+- "deadass" = Seriously / For real
+- "no lie" = Honestly / For real
+- "that slaps" = That's really good / I like it
+- "ate and left no crumbs" = Did excellently
+- "unhinged" = Funny / Chaotic in a good way
+- "it's not serious" / "valid" = Acceptable / Makes sense
 
-STRUCTURE RULES (VERY IMPORTANT):
-- For concept/explanation questions, use this exact structure:
-    ### Quick Answer
-    1-2 short sentences.
+INTERACTION GUIDELINES (CRITICAL):
+✅ DO THIS:
+- Be warm, friendly, and encouraging always
+- UNDERSTAND Gen Z vocabulary but respond using clear, professional language
+- If user uses slang, decode it to the actual question and answer clearly
+- Don't judge or lecture about slang usage - just understand and help
+- Give complete, detailed explanations that help learners truly understand
+- For greetings: Respond warmly and invite learning questions
+- For learning questions: Provide thorough, well-structured answers with examples
+- For out-of-topic questions: Say "I'm your AI tutor and I'm here for training you. Let's learn something new today!" then suggest a relevant topic
+- Show you understand their casual style by being relatable but still professional in YOUR response
 
-    ### Key Points
-    - 3 to 5 bullet points, one idea per line.
+PROGRESSIVE LEARNING APPROACH (IMPORTANT):
+- If user asks about Python GENERALLY (like "explain Python" or "what is Python"):
+  * FIRST: Define Python clearly (what it is, why it's useful)
+  * THEN: Ask specifically which Python topic they want to learn
+  * THEN: List 6-8 beginner-friendly Python topics to choose from
+  * DON'T jump straight to detailed explanation without asking
+  
+- If user asks about a SPECIFIC Python topic (like "explain for loops" or "what are variables"):
+  * DIRECTLY provide DETAILED explanation with multiple examples
+  * Follow the structured format exactly
+  * Go deep into the topic
 
-    ### Example
-    - If coding-related, provide one short code block.
-    - Add 2-4 line explanation after the code block.
+- Examples of GENERAL Python questions: "What is Python?", "Tell me about Python", "Python basics", "Explain Python"
+- Examples of SPECIFIC Python topics: "for loops", "functions", "lists", "dictionaries", "variables", "classes", "recursion"
 
-    ### Next Step
-    - One practical next action + one short follow-up question.
+❌ DON'T DO THIS:
+- Be cold or dismissive
+- Give vague or incomplete explanations
+- Use "Sorry, I can only answer questions related to the provided learning topics."
+- Lecture the user about their slang
+- Use forced Gen Z slang in responses (be naturally friendly instead)
+- Pretend you don't understand slang
+- When user says "Python" generally, immediately jump into detailed topic explanation without asking what they want
 
-- For simple greetings like "hi"/"hello", keep response under 40 words.
-- Do not output one huge paragraph.
-- Keep line lengths readable and use spacing between sections."""
+EXAMPLES OF GEN Z TO PROFESSIONAL TRANSLATION:
+
+User says: "Yo, explain Python for loops no cap 🔥🔥 that would be bussin"
+You understand as: "Please explain Python for loops properly. I think that would be really helpful."
+You respond with: Regular professional structured response, understanding their enthusiasm
+
+User says: "Nah this recursion thing is lowkey sus fr fr"
+You understand as: "I find recursion somewhat confusing or suspicious / unclear."
+You respond with: Clear breakdown of recursion explaining why it might seem confusing
+
+User says: "bet, can you help me debug this code deadass"
+You understand as: "Sure, please help me debug this code seriously."
+You respond with: Structured debugging help with examples
+
+EXAMPLE - PROGRESSIVE LEARNING FOR GENERAL PYTHON:
+User says: "explain python"
+You respond with:
+### 📚 What is Python?
+[Define Python in 2-3 sentences]
+
+### 🎯 Why Python is Awesome
+- Point 1: Easy to learn
+- Point 2: Powerful
+- etc.
+
+### 💡 Popular Uses
+- Web development
+- Data science
+- Automation
+- AI/Machine Learning
+
+### 🚀 Which Python Topic Would You Like to Learn?
+Pick one of these beginner-friendly topics:
+1. **Variables & Data Types** - Store and work with information
+2. **If/Else Statements** - Make decisions in code
+3. **For Loops** - Repeat code multiple times
+4. **While Loops** - Repeat until something happens
+5. **Functions** - Organize reusable code
+6. **Lists** - Work with multiple items
+7. **Dictionaries** - Organize data with labels
+8. **String Operations** - Work with text
+
+What sounds interesting to you? Just say the number or the topic name!
+
+EXAMPLE - DETAILED EXPLANATION FOR SPECIFIC TOPIC:
+User says: "I want to learn for loops" (after seeing the list above)
+OR User says directly: "explain for loops"
+You respond with FULL DETAILED explanation following the structured format.
+
+RESPONSE STRUCTURE (MUST FOLLOW EXACTLY):
+
+For GENERAL/INTRO Questions (like "What is Python?"):
+### 📚 [Topic Name]
+1-2 sentences explaining what it is
+
+### 🎯 Key Benefits/Points
+- Point 1
+- Point 2
+- Point 3+
+
+### 💡 Common Uses/Examples
+- Use case 1
+- Use case 2
+
+### 🚀 What Would You Like to Learn?
+List specific topics with brief descriptions,
+OR ask which specific subtopic they want to dive into
+
+For SPECIFIC/DETAILED Questions (like "explain for loops"):
+### 📚 Quick Answer
+1-2 sentences directly answering their question.
+
+### 🎯 Key Points
+- Point 1: Clear and concise
+- Point 2: Builds on point 1
+- Point 3-5: Additional insights (3-5 total)
+
+### 💡 Example
+Show code example or scenario with 2-3 line explanation.
+
+### 🚀 Next Step
+One practical action + one follow-up question.
+
+For Greetings:
+Just one warm, welcoming sentence and ask what they'd like to learn!
+
+For Out-of-Topic:
+"I'm your AI tutor and I'm here for training you. Let's learn something new today! How about we explore [suggest topic]?"
+
+CRITICAL RULES:
+- Explanations must be COMPLETE and CORRECT
+- Always structure properly with markdown
+- Be encouraging and supportive
+- No harsh rejections ever
+- Understand casual/slang language but respond professionally
+- Never be condescending about language choices
+- If follow-up: Do NOT repeat greetings
+- Never re-introduce yourself after first turn
+- For general topics: Ask and guide, don't assume
+- For specific topics: Provide detailed explanation immediately
+
+### 🎯 Key Points
+- Point 1: Clear and concise
+- Point 2: Builds on point 1
+- Point 3-5: Additional insights (3-5 total)
+
+### 💡 Example
+Show code example or scenario with 2-3 line explanation.
+
+### 🚀 Next Step
+One practical action + one follow-up question.
+
+For Greetings:
+Just one warm, welcoming sentence and ask what they'd like to learn!
+
+For Out-of-Topic:
+"I'm your AI tutor and I'm here for training you. Let's learn something new today! How about we explore [suggest topic]?"
+
+CRITICAL RULES:
+- Explanations must be COMPLETE and CORRECT
+- Always structure properly with markdown
+- Be encouraging and supportive
+- No harsh rejections ever
+- Understand casual/slang language but respond professionally
+- Never be condescending about language choices
+- If follow-up: Do NOT repeat greetings
+- Never re-introduce yourself after first turn"""
             
             # Generate complete English response
             logger.debug(f"Requesting English response from Gemini (timeout: 30s, retries: 3)")
@@ -392,55 +555,302 @@ English content to translate:
         """Provide helpful fallback response when Gemini is unavailable"""
         lower_msg = message.lower()
         
-        if "for loop" in lower_msg or "while loop" in lower_msg:
-            return f"""Hi {user_name}! 👋
+        # Specific Python topics - provide detailed explanation
+        specific_topics = {
+            "for loop": """### 📚 Quick Answer
+**For Loop** iterates over each item in a sequence, running code for each item.
 
-**For Loop** in Python iterates over a sequence:
+### 🎯 Key Points
+- Use `for` loop when you know what you're looping through (list, string, range)
+- Each iteration processes one item at a time
+- Much cleaner than while loops for collections
+- The loop variable updates automatically after each iteration
+- No risk of infinite loops if you use it correctly
+
+### 💡 Example
 ```python
-for i in range(5):
-    print(i)  # Prints 0, 1, 2, 3, 4
-```
+for i in range(3):
+    print(i)  # Prints: 0, 1, 2
 
-**While Loop** repeats while a condition is True:
+for name in ["Alice", "Bob", "Charlie"]:
+    print(f"Hello, {name}")
+```
+The first example loops 3 times. The second loops through a list of names.
+
+### 🚀 Next Step
+Try writing a for loop that prints numbers 1 to 5, or loops through your favorite items. What will you loop through?""",
+            
+            "while loop": """### 📚 Quick Answer
+**While Loop** repeats code as long as a condition is true. Once the condition becomes false, the loop stops.
+
+### 🎯 Key Points
+- Use `while` when repeat count is unknown (reading until "quit", games, etc.)
+- Must update the condition variable inside the loop
+- Missing the update causes infinite loops (very bad!)
+- Check condition BEFORE each iteration
+- More dangerous than `for` loops if not careful
+
+### 💡 Example
 ```python
 count = 0
 while count < 3:
-    print(count)
-    count += 1
+    print(f"Count: {count}")
+    count += 1  # MUST DO THIS or infinite loop!
+
+# User input example
+user_input = ""
+while user_input != "quit":
+    user_input = input("Type 'quit' to exit: ")
+    print(f"You said: {user_input}")
 ```
 
-💡 **Tip**: Use `for` when you know how many times to loop, `while` when you don't!
+### 🚀 Next Step
+Try writing a while loop that counts down from 5 to 1, or asks user for input until they say "done". Remember to update the condition!""",
+            
+            "variables": """### 📚 Quick Answer
+**Variables** are named containers that store information (numbers, text, true/false, etc.) for your program to use.
 
-Want to try writing a loop? Share your code and I'll help! 🚀"""
+### 🎯 Key Points
+- Variables give names to data so you can reuse them
+- Names should be descriptive (age, name, total_score, not x or y)
+- Python figures out the data type automatically
+- You can change a variable's value anytime
+- Use snake_case for variable names in Python (my_variable, not myVariable)
+
+### 💡 Example
+```python
+age = 15  # Integer (whole number)
+name = "Alex"  # String (text)
+is_student = True  # Boolean (true/false)
+height = 5.8  # Float (decimal number)
+
+print(f"{name} is {age} years old")  # Reuse variables
+age = 16  # Change the value
+print(age)  # Now prints 16, not 15
+```
+
+### 🚀 Next Step
+Create 3 variables about yourself: your name, age, and favorite hobby. Then print them like "My name is [name], I'm [age], and I love [hobby].".""",
+            
+            "function": """### 📚 Quick Answer
+**Functions** are reusable blocks of code that perform specific tasks. Define once, use many times!
+
+### 🎯 Key Points
+- Functions reduce code repetition (DRY: Don't Repeat Yourself)
+- Define with `def`, call with function_name()
+- Can accept inputs (parameters) and return outputs
+- Parameters are like variables that functions receive
+- Return sends data back to whoever called the function
+
+### 💡 Example
+```python
+def greet(name):
+    return f"Hello, {name}! Welcome to learning! 🎓"
+
+message = greet("Alex")  # Call function
+print(message)  # Prints: Hello, Alex! Welcome to learning! 🎓
+
+def add_numbers(a, b):
+    return a + b
+
+result = add_numbers(5, 3)
+print(result)  # Prints: 8
+```
+
+### 🚀 Next Step
+Write a function that takes two numbers and returns their product (multiply). Call it with different numbers!""",
+            
+            "list": """### 📚 Quick Answer
+**Lists** store multiple items in one variable. Think of it like a shopping list where each item has a position.
+
+### 🎯 Key Points
+- Lists use square brackets: [item1, item2, item3]
+- Access items by position (first item is position 0, not 1!)
+- Lists can change: add, remove, or modify items
+- Items can be any type: numbers, text, mixed, even other lists
+- Use loops to go through all items quickly
+
+### 💡 Example
+```python
+fruits = ["apple", "banana", "orange"]
+print(fruits[0])  # Prints: apple (position 0 is first!)
+print(fruits[2])  # Prints: orange (position 2 is third!)
+
+fruits.append("mango")  # Add to end
+fruits.remove("banana")  # Remove item
+print(fruits)  # Prints: ['apple', 'orange', 'mango']
+
+for fruit in fruits:  # Loop through
+    print(fruit)
+```
+
+### 🚀 Next Step
+Create a list of 5 things you want to learn. Add 2 more items to it and print each one.""",
+            
+            "dictionary": """### 📚 Quick Answer
+**Dictionaries** store information as key-value pairs (like a real dictionary: word→meaning). Super organized!
+
+### 🎯 Key Points
+- Use curly braces: {key: value, key: value}
+- Access by key, not position: my_dict["key"]
+- Keys are usually text/strings, values can be anything
+- Dictionaries are great for structured data
+- Much more readable than lists for labeled data
+
+### 💡 Example
+```python
+student = {
+    "name": "Alex",
+    "age": 15,
+    "grade": "10th",
+    "favorite_subject": "Computer Science"
+}
+
+print(student["name"])  # Prints: Alex
+print(student["age"])   # Prints: 15
+
+student["age"] = 16  # Update value
+student["school"] = "Tech High"  # Add new key-value
+
+for key in student:  # Loop through
+    print(f"{key}: {student[key]}")
+```
+
+### 🚀 Next Step
+Create a dictionary about yourself with: name, hobby, favorite_book, lucky_number. Print each value!"""
+        }
         
-        elif "python" in lower_msg or "programming" in lower_msg:
-            return f"""Hey {user_name}! 🌟
+        # Check for specific topics first
+        for topic, response in specific_topics.items():
+            if topic in lower_msg:
+                return response
+        
+        # General Python question - use progressive learning approach
+        if "python" in lower_msg and "for loop" not in lower_msg and "while loop" not in lower_msg:
+            # Check if it's asking for general Python or general programming
+            general_python_phrases = ["what is python", "explain python", "about python", "python basics", 
+                                     "introduce python", "get started python", "learn python", "python tutorial",
+                                     "python beginners"]
+            
+            is_general_question = any(phrase in lower_msg for phrase in general_python_phrases)
+            
+            if is_general_question:
+                # PROGRESSIVE LEARNING: Ask what they want to learn
+                return f"""### 📚 What is Python?
+Python is a beginner-friendly, powerful programming language used for everything - websites, apps, data science, AI, automation, and more!
 
-I'm here to help you learn programming! Here's what I can do:
-- Explain concepts with examples
-- Debug your code
-- Create practice problems
-- Give tips and best practices
+### 🎯 Why Python is Awesome
+- **Easy to Learn**: Reads almost like English
+- **Powerful**: Can build real projects fast
+- **Huge Community**: Tons of libraries and help available
+- **In-Demand**: Companies love Python developers
+- **Versatile**: Works for web, data, AI, scripting, and more
 
-What would you like to learn about? Try asking:
-- "Explain Python functions with examples"
-- "What's the difference between lists and tuples?"
-- "Help me understand if-else statements"
+### 💡 Popular Uses
+- 🌐 Web apps and servers (Instagram, Spotify use it)
+- 📊 Data analysis and visualization
+- 🤖 Artificial Intelligence and Machine Learning
+- 🔧 Automation and scripting
+- 🎮 Game development
+- 💻 Desktop applications
 
-I'm excited to learn with you! 💪"""
+### 🚀 What Python Topic Would You Like to Learn First?
+
+Pick one that interests you (or just type the number or name):
+
+1. **Variables** - Store and work with information
+2. **Data Types** - Numbers, text, true/false  
+3. **If/Else** - Make decisions in code
+4. **While Loops** - Repeat until something happens
+5. **For Loops** - Repeat for each item
+6. **Functions** - Create reusable code
+7. **Lists** - Work with multiple items
+8. **Dictionaries** - Organize data with labels
+
+💡 **Pro Tip**: Start with Variables and If/Else, then move to loops!
+
+Which topic sounds good to you? Just say the number or topic name, and I'll explain it in detail! 🚀"""
+            else:
+                # They mentioned Python but with a specific context
+                return f"""### 📚 Quick Answer
+I'm your AI tutor! 🎓 I can explain Python, help debug code, and guide you through programming concepts with real examples.
+
+### 🎯 Popular Python Topics
+- Variables & data types
+- If/Else statements
+- Loops (for & while)
+- Functions
+- Lists and dictionaries
+- String operations
+- File handling
+- Object-oriented programming
+
+### 💡 I Can Help You With
+- Learning new concepts with examples
+- Fixing bugs in your code
+- Understanding error messages
+- Writing better code
+- Building projects step-by-step
+
+### 🚀 Next Step
+Tell me specifically what you want to learn:
+- "What are variables?"
+- "Explain for loops"
+- "Help me debug this code"
+- "Show me how to use lists"
+
+Let's make learning fun! 💪"""
+        
+        elif "programming" in lower_msg:
+            return f"""### 📚 Quick Answer
+I'm your AI tutor! 🎓 I specialize in programming and can help you learn any language or concept.
+
+### 🎯 Languages I Can Help With
+- **Python** - Best for beginners, data science, automation
+- **JavaScript** - For web and interactive apps
+- **Java** - For big systems and Android apps
+- **C++** - For performance and games
+- **SQL** - For databases
+
+### 💡 Topics I Cover
+✨ Variables, data types, operators
+🔄 Loops and conditionals
+📦 Functions and modules
+📋 Arrays and data structures
+🔗 Object-oriented programming
+🐛 Debugging and problem-solving
+💾 File handling and databases
+
+### 🚀 What Language or Topic Interests You?
+Just ask and I'll explain it with clear examples and code! 🚀"""
         
         else:
-            return f"""Hi {user_name}! 👋
+            return f"""### 📚 Quick Answer
+I'm your AI tutor and I'm here for training you. Let's learn something new today! 🎓
 
-I'm your AI learning buddy! I can help you with:
-✨ Programming concepts (Python, JavaScript, Java, etc.)
-🐛 Debugging code
-💡 Understanding algorithms
-📝 Practice problems
+### 🎯 Key Points
+- I specialize in programming and computer science
+- I explain concepts clearly with real-world examples
+- I help you understand, not just memorize
+- Every question gets a structured, detailed answer
+- I support multiple languages and learning styles
 
-What would you like to learn today? Be specific and I'll give you a clear explanation with examples!
+### 💡 What I Can Help With
+✨ **Programming**: Python, JavaScript, Java, C++, etc.
+🐛 **Debugging**: Fix errors and understand why they happen
+💡 **Algorithms**: Learn problem-solving techniques
+📝 **Practice**: Get quiz questions and practice problems
+📚 **Concepts**: Understand complex ideas simply
 
-Example: "Explain Python for loops with 3 examples" """
+### 🚀 Next Step
+Ask me something specific about what you want to learn:
+- "What is Python?"
+- "Explain for loops"
+- "What's recursion?"
+- "How do I write a function?"
+- "Explain arrays vs linked lists"
+
+I'm excited to help you learn! 🚀 What topic interests you?"""
 
     async def get_personalized_explanation(
         self,
