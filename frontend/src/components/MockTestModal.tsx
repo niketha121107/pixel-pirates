@@ -201,27 +201,42 @@ export const MockTestModal = ({
         try {
             setSubmitting(true);
             const totalPoints = questions.reduce((sum, q) => sum + q.points, 0);
+            const timeTaken = totalTime - timeLeft;
+            
+            console.log('📝 Saving test result:', {
+                topicId,
+                totalScore,
+                percentage,
+                totalPoints,
+                timeTaken,
+                status: percentage >= 70 ? 'completed' : 'in-progress'
+            });
             
             // Record topic progress to backend
-            await progressAPI.saveTopic({
+            const topicRes = await progressAPI.saveTopic({
                 topic_id: topicId,
                 quiz_score: totalScore,
                 quiz_total: totalPoints,
                 attempts: 1,
                 status: percentage >= 70 ? 'completed' : 'in-progress'
             });
+            console.log('✅ saveTopic succeeded:', topicRes.data);
             
             // Also save mock result to backend for stats aggregation
-            await progressAPI.saveMockResult({
+            const mockRes = await progressAPI.saveMockResult({
                 topics: [topicId],
                 score: totalScore,
-                total_questions: totalPoints,
+                total_questions: questions.length,  // Use length instead of totalPoints
                 percentage: percentage,
-                time_taken: totalTime - timeLeft,
+                time_taken: timeTaken,
                 answers: Object.values(answers)
             });
-        } catch (err) {
-            console.error('Failed to save progress:', err);
+            console.log('✅ saveMockResult succeeded:', mockRes.data);
+        } catch (err: any) {
+            console.error('❌ Failed to save progress:', err);
+            if (err.response?.data) {
+                console.error('Backend error:', err.response.data);
+            }
         } finally {
             setSubmitting(false);
         }

@@ -103,6 +103,8 @@ export const Progress = () => {
     // Main fetch function - extracted for reusability
     const fetchAllData = useCallback(async () => {
         try {
+            console.log('🔄 Progress page fetching data...');
+            
             // Use user-specific key to isolate test results per user
             const userKey = `edutwin-mock-results_${user?.id || 'guest'}`;
             const localMockRaw = localStorage.getItem(userKey);
@@ -110,6 +112,7 @@ export const Progress = () => {
             if (localMockRaw) {
                 try {
                     localMock = JSON.parse(localMockRaw);
+                    console.log('📦 Local mock results loaded:', localMock.length, 'items');
                 } catch {
                     localMock = [];
                 }
@@ -127,11 +130,15 @@ export const Progress = () => {
                 const allTopics = topicsRes.value.data?.data?.topics || [];
                 allTopicsCount = allTopics.length; // Accurate total count
                 completedTopicsFromAPI = allTopics.filter((t: any) => t.status === 'completed') || [];
+                console.log('📋 Topics API:', { totalTopics: allTopicsCount, completedTopics: completedTopicsFromAPI.length });
+            } else if (topicsRes.status === 'rejected') {
+                console.error('❌ Topics API failed:', topicsRes.reason);
             }
 
             if (statsRes.status === 'fulfilled') {
                 const s = statsRes.value.data?.data?.stats;
                 if (s) {
+                    console.log('📊 Stats from API:', s);
                     // Use backend as single source of truth (no Math.max blending)
                     const backendSeconds = (s.totalHours ?? 0) * 3600;
                     
@@ -144,6 +151,8 @@ export const Progress = () => {
                         streak: s.streak ?? 0,
                     });
                 }
+            } else if (statsRes.status === 'rejected') {
+                console.error('❌ Stats API failed:', statsRes.reason);
             }
 
             if (topicsRes.status === 'fulfilled') {
@@ -192,21 +201,23 @@ export const Progress = () => {
         load();
     }, [fetchAllData]);
 
-    // Auto-refresh: Listen for localStorage changes and poll periodically
+    // Smart auto-refresh: Listen for changes and smart polling
     useEffect(() => {
         // Listen for storage changes (when mock test results are saved)
         const handleStorageChange = (e: StorageEvent) => {
             if (e.key?.includes('edutwin-mock-results') || e.key?.includes('edutwin-understanding')) {
+                // Immediate refresh when user takes a test
                 fetchAllData();
             }
         };
 
         window.addEventListener('storage', handleStorageChange);
 
-        // Auto-refresh every 30 seconds while on this page
+        // Smart polling: Only every 60 seconds to reduce unnecessary API calls
+        // (relying primarily on storage change events for real-time updates)
         const pollInterval = setInterval(() => {
             fetchAllData();
-        }, 30000);
+        }, 60000); // Reduced from 30s to 60s for efficiency
 
         return () => {
             window.removeEventListener('storage', handleStorageChange);
@@ -231,6 +242,26 @@ export const Progress = () => {
 
             <PageWrapper className="lg:pl-64">
                 <div className="max-w-5xl mx-auto space-y-8">
+
+                    {/* Error Banner */}
+                    {fetchError && (
+                        <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="bg-red-50 border border-red-300 rounded-xl p-4 flex items-center justify-between"
+                        >
+                            <div className="flex items-center gap-3">
+                                <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                                <p className="text-sm text-red-700 font-medium">{fetchError}</p>
+                            </div>
+                            <button
+                                onClick={() => { setFetchError(null); handleRefresh(); }}
+                                className="text-sm px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                            >
+                                Retry
+                            </button>
+                        </motion.div>
+                    )}
 
                     {/* Header */}
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">

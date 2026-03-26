@@ -109,6 +109,15 @@ def get_mock_data():
 
 def get_user_by_id(user_id: str):
     _ensure_cache_loaded(require_users=True)
+    # Reload from MongoDB to ensure fresh data after updates
+    db = _get_db()
+    if db is not None:
+        mongo_user = db.users.find_one({"_id": user_id})
+        if mongo_user:
+            # Convert MongoDB _id to id field and update cache
+            mongo_user["id"] = str(mongo_user.pop("_id"))
+            MOCK_USERS[user_id] = mongo_user
+    
     user = MOCK_USERS.get(user_id)
     if user:
         normalize_mock_test_integrity_state(user, persist=True)
@@ -427,6 +436,8 @@ def save_mock_result(user_id: str, result_data: dict) -> dict:
     if db is not None:
         db.mock_results.insert_one(record)
     
+    logger.info(f"💾 Saving mock result for user {user_id}: {result_data}")
+    
     # Update user stats based on mock test result
     user = MOCK_USERS.get(user_id)
     if user:
@@ -466,11 +477,16 @@ def save_mock_result(user_id: str, result_data: dict) -> dict:
                 # Topic passed - mark as completed
                 user["completedTopics"].append(topic_id)
                 user["totalScore"] = user.get("totalScore", 0) + score
+                logger.info(f"✅ Topic {topic_id} marked as COMPLETED (score: {percentage}%) for user {user_id}")
             else:
                 # Topic attempted but not passed - mark as in-progress
                 user["inProgressTopics"].append(topic_id)
+                logger.info(f"🔄 Topic {topic_id} marked as IN-PROGRESS (score: {percentage}%) for user {user_id}")
         
+        logger.info(f"📊 User {user_id} stats updated: {len(user['completedTopics'])} completed, avg={user.get('avgScore'):.1f}%, quizzes={user['quizzesTaken']}")
         _persist_user(user_id)
+    else:
+        logger.error(f"❌ User {user_id} not found in MOCK_USERS")
     
     record.pop("_id", None)
     return record
@@ -485,7 +501,7 @@ def get_mock_results(user_id: str) -> list:
 
 # ── Detailed per-topic progress ────────────────────────────────
 def save_topic_progress(user_id: str, topic_id: str, data: dict) -> dict:
-    """Save detailed per-topic progress (time_spent, attempts, scores, etc.) and update user's total hours."""
+    """Save detailed per-topic progress (time_spent, attempts, scores, etc.) and update user's total hours and topic status."""
     db = _get_db()
     record = {
         "user_id": user_id,
@@ -500,7 +516,7 @@ def save_topic_progress(user_id: str, topic_id: str, data: dict) -> dict:
             upsert=True,
         )
     
-    # Update user's total learning hours
+    # Update user's total learning hours and topic completion status
     user = MOCK_USERS.get(user_id)
     if user:
         time_spent_seconds = data.get("time_spent", 0)
@@ -508,7 +524,38 @@ def save_topic_progress(user_id: str, topic_id: str, data: dict) -> dict:
             # Convert seconds to hours and add to total
             time_hours = time_spent_seconds / 3600
             user["totalHours"] = user.get("totalHours", 0) + time_hours
-            _persist_user(user_id)
+        
+        # Update topic status based on quiz score
+        quiz_score = data.get("quiz_score", 0)
+        quiz_total = data.get("quiz_total", 100)
+        status = data.get("status", "in-progress")
+        percentage = (quiz_score / quiz_total * 100) if quiz_total > 0 else 0
+        
+        # Ensure lists exist
+        user.setdefault("completedTopics", [])
+        user.setdefault("inProgressTopics", [])
+        user.setdefault("pendingTopics", [])
+        
+        # Remove from other lists if present
+        for list_name in ["pendingTopics", "inProgressTopics", "completedTopics"]:
+            if topic_id in user[list_name]:
+                user[list_name].remove(topic_id)
+        
+        # Add to appropriate list based on status
+        if status == "completed" or percentage >= 70:
+            # Topic passed - mark as completed
+            user["completedTopics"].append(topic_id)
+            # Update quiz scores
+            user.setdefault("quizScores", {})[topic_id] = quiz_score
+            # Recalculate average score
+            all_scores = list(user.get("quizScores", {}).values())
+            if all_scores:
+                user["avgScore"] = sum(all_scores) / len(all_scores)
+        else:
+            # Topic attempted but not passed - mark as in-progress
+            user["inProgressTopics"].append(topic_id)
+        
+        _persist_user(user_id)
     
     return record
 
