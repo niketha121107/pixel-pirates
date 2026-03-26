@@ -169,18 +169,6 @@ class QuizResult(BaseModel):
     percentage: float
     time_taken: Optional[int] = None
 
-# Leaderboard Models
-class LeaderboardEntry(BaseModel):
-    rank: int
-    user_id: str = Field(alias="userId")
-    name: str
-    score: int
-    topics_completed: int = Field(alias="topicsCompleted")
-    avatar: str
-    
-    class Config:
-        populate_by_name = True
-
 # Analytics Models
 class UserStats(BaseModel):
     topics_completed: int = Field(alias="topicsCompleted")

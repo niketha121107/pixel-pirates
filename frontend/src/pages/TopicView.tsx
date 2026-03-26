@@ -9,6 +9,7 @@ import { VideoTrackerUI } from '../components/learning/VideoTrackerUI';
 import { ConfidenceSlider } from '../components/learning/ConfidenceSlider';
 import { FlowchartExplanation } from '../components/learning/FlowchartExplanation';
 import type { FlowchartNode } from '../components/learning/FlowchartExplanation';
+import { MockTestModal } from '../components/MockTestModal';
 import { GradientButton } from '../components/ui/GradientButton';
 import { GlassCard } from '../components/ui/GlassCard';
 import { Link } from 'react-router-dom';
@@ -140,6 +141,7 @@ export const TopicView = () => {
     const [selectedExplanation, setSelectedExplanation] = useState<ExplanationType>('simplified');
     const [confidence, setConfidence] = useState(40);
     const [savedUnderstanding, setSavedUnderstanding] = useState<{ value: number; label: string } | null>(null);
+    const [mockTestModalOpen, setMockTestModalOpen] = useState(false);
     const { saveUnderstanding, getByTopic } = useUnderstanding();
     const { addNotification } = useNotifications();
     const { startTracking, stopTracking, pauseTracking, resumeTracking, elapsedTime, isPaused, getInsight, getTotalLearningHours, getTopicTime } = useLearningTimer();
@@ -486,8 +488,6 @@ export const TopicView = () => {
             setIsFetchingFreshVideos(false);
         }
     };
-
-
 
     const hasWatchedFull = videoProgress >= 95 || videoEnded;
     const currentExplanation = explanations[selectedExplanation];
@@ -1114,12 +1114,15 @@ export const TopicView = () => {
                                 </div>
                             </GlassCard>
                         ) : (
-                            <Link to={`/mock-test?topicId=${topicId}&topic=${encodeURIComponent(topicTitle)}`}>
-                                <GradientButton className="group text-lg px-8 py-4">
-                                    Take Mock Test
+                            <button
+                                onClick={() => setMockTestModalOpen(true)}
+                                className="w-full"
+                            >
+                                <GradientButton className="group text-lg px-8 py-4 w-full justify-center">
+                                    Take Topic Test
                                     <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                                 </GradientButton>
-                            </Link>
+                            </button>
                         )}
                     </motion.div>
 
@@ -1145,6 +1148,35 @@ export const TopicView = () => {
                         </Link>
                     </motion.div>
                     </motion.div>
+
+                    {/* Mock Test Modal */}
+                    <MockTestModal
+                        isOpen={mockTestModalOpen}
+                        onClose={() => setMockTestModalOpen(false)}
+                        topicId={topicId}
+                        topicTitle={topicTitle}
+                        onTestCompleted={() => {
+                            // Refresh test result from localStorage
+                            if (user?.id && topicId) {
+                                const resultsKey = `edutwin-mock-results_${user.id}`;
+                                const stored = localStorage.getItem(resultsKey);
+                                if (stored) {
+                                    try {
+                                        const results = JSON.parse(stored);
+                                        const topicResult = results.find((r: any) => r.topicId === topicId || r.topic === topicId);
+                                        if (topicResult) {
+                                            setTestResult(topicResult);
+                                            setHasAttemptedTest(true);
+                                            // Close modal after a short delay to show results
+                                            setTimeout(() => setMockTestModalOpen(false), 1000);
+                                        }
+                                    } catch (e) {
+                                        // ignore
+                                    }
+                                }
+                            }
+                        }}
+                    />
 
                 </div>
             </PageWrapper>

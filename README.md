@@ -32,7 +32,6 @@ Pixel Pirates is a full-stack educational web application that provides personal
 - 📊 Adaptive Quizzes
 - 📈 Progress Analytics
 - 🛡️ Anti-Cheat Mock Test Security
-- 🏆 Leaderboard System
 - 📝 Note-Taking & Study Materials
 - 💬 AI-Powered Chat Assistance
 

@@ -40,10 +40,6 @@ class AIContentGenerator:
     ) -> str:
         """Call Gemini API with retry logic"""
         
-        if not self.api_key:
-            logger.error("Gemini API key not configured")
-            raise Exception("Gemini API key not configured")
-        
         for attempt in range(retries):
             try:
                 url = f"{self.base_url}/models/{self.model}:generateContent"
@@ -63,40 +59,33 @@ class AIContentGenerator:
                     }
                 }
                 
-                logger.info(f"[Gemini] Calling API attempt {attempt + 1}/{retries}...")
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     response = await client.post(url, params=params, json=payload)
                     
                     if response.status_code == 200:
                         data = response.json()
                         if "candidates" in data and len(data["candidates"]) > 0:
-                            result = data["candidates"][0]["content"]["parts"][0]["text"]
-                            logger.info(f"[Gemini] Success: {len(result)} chars returned")
-                            return result
-                        else:
-                            logger.warning(f"[Gemini] No candidates in response: {data}")
+                            return data["candidates"][0]["content"]["parts"][0]["text"]
                     
                     elif response.status_code == 429:  # Rate limit
-                        logger.warning(f"[Gemini] Rate limited, attempt {attempt + 1}/{retries}")
                         if attempt < retries - 1:
                             await asyncio.sleep(2 ** attempt)  # Exponential backoff
                             continue
                     
-                    logger.error(f"[Gemini] API error {response.status_code}: {response.text[:500]}")
+                    logger.error(f"Gemini API error {response.status_code}: {response.text[:200]}")
                     
             except asyncio.TimeoutError:
-                logger.warning(f"[Gemini] Timeout attempt {attempt + 1}/{retries}")
+                logger.warning(f"Timeout attempt {attempt + 1}/{retries}")
                 if attempt < retries - 1:
                     await asyncio.sleep(1)
                     continue
             except Exception as e:
-                logger.error(f"[Gemini] Exception attempt {attempt + 1}: {type(e).__name__}: {str(e)}")
+                logger.error(f"Error calling Gemini: {e}")
                 if attempt < retries - 1:
                     await asyncio.sleep(1)
                     continue
         
-        logger.error(f"[Gemini] All {retries} attempts failed")
-        raise Exception("Failed to generate content from Gemini API")
+        return ""
     
     def _clean_json(self, text: str) -> str:
         """Extract JSON from response, removing markdown code blocks"""
@@ -133,18 +122,11 @@ Provide information as valid JSON with these fields:
 Return ONLY valid JSON object, no markdown code blocks."""
         
         try:
-            logger.info(f"[StudyMaterial] Generating for: {topic_name}")
             response = await self.call_gemini(prompt, max_tokens=2048)
-            
-            if not response:
-                raise Exception("Empty response from Gemini API")
-            
             response = self._clean_json(response)
-            logger.info(f"[StudyMaterial] Response length: {len(response)}")
             
             try:
                 data = json.loads(response)
-                logger.info(f"[StudyMaterial] Parsed JSON successfully")
                 
                 # Ensure all expected fields exist
                 material = {
@@ -163,18 +145,18 @@ Return ONLY valid JSON object, no markdown code blocks."""
                     "generatedAt": datetime.now().isoformat()
                 }
             except json.JSONDecodeError as je:
-                logger.error(f"[StudyMaterial] JSON parse error: {je}")
-                logger.error(f"[StudyMaterial] Response: {response[:300]}")
-                raise Exception(f"Failed to parse study material JSON: {str(je)}")
+                logger.error(f"Failed to parse study material JSON: {je}")
+                logger.error(f"Response: {response[:200]}")
+                return {"success": False, "error": "Failed to parse JSON response"}
         
         except Exception as e:
-            logger.error(f"[StudyMaterial] Error generating: {type(e).__name__}: {str(e)}")
+            logger.error(f"Error generating study material: {e}")
             return {"success": False, "error": str(e)}
     
     async def generate_explanations(
         self,
         topic_name: str,
-        styles: List[str] = None
+        styles: Optional[List[str]] = None
     ) -> Dict[str, Dict[str, str]]:
         """Generate multiple explanation styles for a topic"""
         
@@ -217,11 +199,16 @@ Return ONLY valid JSON object, no markdown code blocks."""
         self,
         topic_name: str,
         num_questions: int = 5,
-        difficulty: str = "mixed"
+        difficulty: str = "mixed",
+        history: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """Generate multiple-choice quiz questions"""
         
-        prompt = f"""TASK: Generate {num_questions} quiz questions about {topic_name}.
+        history_str = ""
+        if history:
+            history_str = f"\n\nCRITICAL: DO NOT repeat or generate any of these previous questions:\n" + "\n".join([f"- {h}" for h in history])
+
+        prompt = f"""TASK: Generate {num_questions} quiz questions about {topic_name}.{history_str}
 
 OUTPUT FORMAT - JSON ARRAY ONLY (no other text, no markdown):
 [
@@ -240,8 +227,21 @@ REQUIREMENTS:
 - correctAnswer is 0, 1, 2, or 3 (index of correct option)
 - difficulty: easy|medium|hard (not "mixed")
 - explanation: one simple sentence
+- If all easy questions on this topic are exhausted, move to medium/hard variants.
 
-CRITICAL: Output ONLY the JSON array. Nothing else. No markdown. No code blocks. Start with [ end with ]."""
+### ANTI-REPEAT SYSTEM:
+- Maintain a running list of ALL questions you have asked in this entire conversation.
+- Before generating any new question, check that list.
+- If a similar question (same concept, same answer, or same wording) was already asked — SKIP it and generate a different one.
+- Never ask the same concept twice even if the wording is slightly different.
+- Treat each question as UNIQUE by tracking: topic + concept + correct answer combination.
+
+PREVIOUS QUESTIONS FOR {topic_name}:
+{history_str}
+
+CRITICAL: Output ONLY the JSON array. Nothing else. No markdown. No code blocks. Start with [ end with ].
+Perform a FINAL CHECK: if any generated question matches a previous concept, REWRITE IT.
+"""
         
         try:
             response = await self.call_gemini(prompt, max_tokens=2048)
@@ -311,53 +311,65 @@ CRITICAL: Output ONLY the JSON array. Nothing else. No markdown. No code blocks.
         self,
         topics: List[str],
         total_questions: int = 20,
-        difficulty_mix: Dict[str, int] = None
+        difficulty_mix: Optional[Dict[str, int]] = None,
+        history: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Generate comprehensive mock test"""
         
-        if difficulty_mix is None:
-            difficulty_mix = {
-                "easy": 5,
-                "medium": 10,
-                "hard": 5
-            }
+        programming_language = ", ".join(topics)
+        n = total_questions
         
-        topics_str = ", ".join(topics)
-        difficulty_str = " ".join([f"{level}: {count}" for level, count in difficulty_mix.items()])
+        # Calculate distribution: ~50% MCQ, 25% Fillups, 25% Descriptive
+        n1 = n // 2
+        n2 = n // 4
+        n3 = n - n1 - n2
         
-        prompt = f"""Create a comprehensive programming mock test. Return ONLY valid JSON.
+        history_str = ""
+        if history:
+            history_str = f"\n\nCRITICAL: DO NOT repeat or generate any of these previous questions:\n" + "\n".join([f"- {h}" for h in history])
 
-Topics: {topics_str}
-Total Questions: {total_questions}
-Difficulty Breakdown: {difficulty_str}
+        prompt = f"""You are a mock test generator. Generate a unique, non-repetitive test based on the following:{history_str}
 
-Requirements:
-- Mix of conceptual and practical questions
-- Include code snippets where relevant
-- Progressive difficulty from easy to hard
-- Real-world programming scenarios
-- Each question must test meaningful knowledge
+**Language/Topic:** {programming_language}
+**Total Questions:** {n}
+**Distribution:**
+- MCQ: {n1} questions (4 options each, only one correct)
+- Fill in the Blanks: {n2} questions
+- Answer the Following: {n3} questions
 
-Return format:
+**STRICT RULES - You MUST follow these:**
+1. ANTI-REPEAT SYSTEM: Maintain a running list of ALL questions asked in this entire conversation.
+2. If a similar question (same concept, same answer, or same wording) was already asked — SKIP it and generate a different one.
+3. NEVER repeat the same question, concept, or answer from any previous test.
+4. Each question must test a DIFFERENT sub-topic or concept. Do not ask about the same function, keyword, or concept twice.
+5. If all easy questions on a topic are exhausted, move to medium/hard variants.
+6. Treat each question as UNIQUE by tracking: topic + concept + correct answer combination.
+7. Cover a WIDE range of topics from the language — do NOT cluster around one area.
+8. Before generating, mentally list 30 distinct sub-topics of {programming_language} and pick from different ones for each question.
+
+**PREVIOUS QUESTIONS (MUST NOT REPEAT):**
+{history_str}
+
+**Output Format:**
+Return ONLY valid JSON in this exact structure:
 {{
-  "metadata": {{
-    "title": "Full Mock Test: {topics_str}",
-    "totalQuestions": {total_questions},
-    "estimatedTime": "45 minutes",
-    "topics": {json.dumps(topics)},
-    "difficulty": {json.dumps(difficulty_mix)}
-  }},
-  "questions": [
+  "mcq": [
     {{
-      "id": "q1",
-      "question": "Question text",
-      "options": ["A) Option A", "B) Option B", "C) Option C", "D) Option D"],
-      "correctIdx": 0,
-      "correctAnswer": "A) Option A",
-      "difficulty": "easy",
-      "topic": "Topic name",
-      "explanation": "Why this answer is correct and how to understand it",
-      "type": "mcq"
+      "question": "...",
+      "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
+      "answer": "A"
+    }}
+  ],
+  "fillups": [
+    {{
+      "question": "The ___ function is used to ...",
+      "answer": "..."
+    }}
+  ],
+  "descriptive": [
+    {{
+      "question": "...",
+      "answer": "..."
     }}
   ]
 }}"""
@@ -367,8 +379,8 @@ Return format:
             response = self._clean_json(response)
             test_data = json.loads(response)
             
-            # Ensure we have the right structure
-            if "questions" in test_data:
+            # Ensure we have the right structure based on new prompt formula
+            if "mcq" in test_data:
                 return {
                     "success": True,
                     "data": test_data,
@@ -384,8 +396,8 @@ Return format:
         self,
         topic_name: str,
         user_score: float,
-        weak_areas: List[str] = None
-    ) -> Dict[str, str]:
+        weak_areas: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
         """Generate personalized progress recommendations"""
         
         weak_areas_str = ", ".join(weak_areas) if weak_areas else "general concepts"

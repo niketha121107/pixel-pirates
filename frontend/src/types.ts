@@ -57,15 +57,6 @@ export interface QuizQuestion {
     correctAnswer: number;
 }
 
-export interface LeaderboardEntry {
-    rank: number;
-    userId: string;
-    name: string;
-    score: number;
-    topicsCompleted: number;
-    avatar: string;
-}
-
 // ── Notes ──────────────────────────────────────────────────────
 export interface UserNote {
     user_id: string;

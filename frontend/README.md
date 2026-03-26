@@ -34,7 +34,6 @@
 | **Interactive Quizzes** | Timed question flow with glitter celebrations, wrong-answer popups, and score review |
 | **Video Learning** | Embedded React Player with custom play/pause overlay & progress bar |
 | **Analytics Dashboard** | Area charts (Recharts), stat cards, weak-topic identification |
-| **Leaderboard** | Global ranking with XP, badges, and avatar display |
 | **Progress Page** | Per-topic understanding feedback, completion rings, streak stats |
 | **User Profile** | Avatar picker (DiceBear), wallpaper themes (160+ options), notes with CRUD, motivational quotes |
 | **Notifications** | Context-driven reminders for pending topics & congrats for completed ones |
@@ -126,7 +125,6 @@ edutwin-frontend/
     │   ├── TopicView.tsx              # Topic detail — explanation modes, video, confidence
     │   ├── QuizPage.tsx               # Interactive quiz with scoring & review
     │   ├── Analytics.tsx              # Performance charts & weak areas
-    │   ├── Leaderboard.tsx            # Global XP ranking
     │   ├── Progress.tsx               # Self-assessment history & completion stats
     │   └── UserProfile.tsx            # Profile editor, badges, notes, wallpaper
     │
@@ -185,7 +183,6 @@ The app starts at **http://localhost:5173** (default Vite port).
 | `/topic` | `TopicView` | Topic detail with 4 explanation modes, video player, confidence slider |
 | `/quiz` | `QuizPage` | Interactive quiz — timed questions, celebrations, review |
 | `/analytics` | `Analytics` | XP charts, accuracy stats, weak areas |
-| `/leaderboard` | `Leaderboard` | Global ranking by XP and badges |
 | `/progress` | `Progress` | Understanding history with self-assessment data |
 | `/profile` | `UserProfile` | Avatar, wallpaper, badges, language skills, notes, quotes |
 | `*` | — | Redirects to `/signin` |

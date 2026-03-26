@@ -17,7 +17,6 @@ MOCK_TEST_SUSPENSION_HOURS = 2
 # ── In-memory caches (populated from MongoDB on startup) ────────
 MOCK_USERS: Dict[str, dict] = {}
 MOCK_TOPICS: Dict[str, dict] = {}
-MOCK_LEADERBOARD: List[dict] = []
 MOCK_SEARCH_HISTORY: Dict[str, List[dict]] = {}
 
 # ── pymongo sync client (set once) ────────────────────────────
@@ -60,7 +59,6 @@ def load_from_mongodb():
     # Clear caches first so reseeds are reflected exactly.
     MOCK_USERS.clear()
     MOCK_TOPICS.clear()
-    MOCK_LEADERBOARD.clear()
     MOCK_SEARCH_HISTORY.clear()
 
     # Users
@@ -74,11 +72,6 @@ def load_from_mongodb():
         topic = _clean_doc(doc)
         MOCK_TOPICS[topic["id"]] = topic
     logger.info(f"Loaded {len(MOCK_TOPICS)} topics from MongoDB")
-
-    # Leaderboard
-    for doc in db.leaderboard.find().sort("rank", 1):
-        MOCK_LEADERBOARD.append(_clean_doc(doc))
-    logger.info(f"Loaded {len(MOCK_LEADERBOARD)} leaderboard entries from MongoDB")
 
     # Search history  (stored per-user)
     for doc in db.search_history.find():
@@ -110,7 +103,6 @@ def get_mock_data():
     return {
         "users": MOCK_USERS,
         "topics": MOCK_TOPICS,
-        "leaderboard": MOCK_LEADERBOARD,
         "search_history": MOCK_SEARCH_HISTORY,
     }
 
@@ -140,12 +132,6 @@ def get_topic_by_id(topic_id: str):
 def get_all_topics():
     _ensure_cache_loaded(require_topics=True)
     return list(MOCK_TOPICS.values())
-
-
-def get_leaderboard():
-    if not MOCK_LEADERBOARD:
-        load_from_mongodb()
-    return MOCK_LEADERBOARD
 
 
 def get_user_search_history(user_id: str):
@@ -196,7 +182,6 @@ def update_user_topic_progress(user_id: str, topic_id: str, status: str, score: 
         user["pendingTopics"].append(topic_id)
 
     _persist_user(user_id)
-    _rebuild_leaderboard()
     return True
 
 
@@ -247,7 +232,6 @@ def create_user(email: str, name: str, hashed_password: str) -> str:
     }
     MOCK_USERS[user_id] = new_user
     _persist_user(user_id)
-    _rebuild_leaderboard()
     return user_id
 
 
@@ -360,37 +344,6 @@ def register_mock_test_violation(user_id: str, reason: str) -> dict:
 
 def user_exists(email: str) -> bool:
     return get_user_by_email(email) is not None
-
-
-# ── Leaderboard helper ─────────────────────────────────────────
-def _rebuild_leaderboard():
-    """Rebuild leaderboard from current user data and persist."""
-    MOCK_LEADERBOARD.clear()
-    entries = sorted(
-        [
-            {
-                "rank": 0,
-                "userId": u["id"],
-                "name": u["name"],
-                "score": u.get("totalScore", 0),
-                "topicsCompleted": len(u.get("completedTopics", [])),
-                "avatar": f"https://api.dicebear.com/7.x/avataaars/svg?seed={u['name'].split()[0]}",
-            }
-            for u in MOCK_USERS.values()
-        ],
-        key=lambda x: x["score"],
-        reverse=True,
-    )
-    for i, entry in enumerate(entries):
-        entry["rank"] = i + 1
-    MOCK_LEADERBOARD.extend(entries)
-
-    # persist
-    db = _get_db()
-    if db is not None:
-        db.leaderboard.drop()
-        if entries:
-            db.leaderboard.insert_many(entries)
 
 
 # ── Notes CRUD ─────────────────────────────────────────────────
@@ -518,7 +471,6 @@ def save_mock_result(user_id: str, result_data: dict) -> dict:
                 user["inProgressTopics"].append(topic_id)
         
         _persist_user(user_id)
-        _rebuild_leaderboard()
     
     record.pop("_id", None)
     return record

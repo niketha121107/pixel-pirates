@@ -35,7 +35,6 @@ pixel-pirates/
 │   │   │   ├── feedback.py                 - Feedback endpoints
 │   │   │   ├── progress.py                 - Progress tracking
 │   │   │   ├── notes.py                    - Notes endpoints
-│   │   │   ├── leaderboard.py              - Leaderboard endpoints
 │   │   │   ├── search.py                   - Search endpoints
 │   │   │   ├── adaptive.py                 - Adaptive learning
 │   │   │   ├── database.py                 - Database operations

@@ -57,13 +57,13 @@ async def connect_to_mongo(settings: Settings) -> bool:
 
 async def close_mongo_connection():
     """Close database connection"""
-    if db.client:
+    if db.client is not None:
         db.client.close()
         logger.info("✅ MongoDB connection closed")
 
 async def get_database() -> AsyncIOMotorDatabase:
     """Get database instance"""
-    if not db.database:
+    if db.database is None:
         raise RuntimeError("Database not initialized. Call connect_to_mongo() first.")
     return db.database
 
@@ -114,5 +114,4 @@ class Collections:
     USER_FEEDBACK = "user_feedback"
     MOCK_RESULTS = "mock_results"
     VIDEOS = "videos"
-    LEADERBOARD = "leaderboard"
     ANALYTICS = "analytics"

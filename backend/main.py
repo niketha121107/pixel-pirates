@@ -7,7 +7,7 @@ from datetime import datetime, date  # viewable article URLs
 import uvicorn
 from app.models import *
 from app.data import get_mock_data, initialize_data
-from app.routes import auth, users, topics, quiz, videos, leaderboard, search, chat, ai_quiz, ai_content
+from app.routes import auth, users, topics, quiz, videos, search, chat, ai_quiz, ai_content, questions
 from app.routes import database as db_routes
 from app.routes import notes, feedback, progress
 from app.routes import adaptive, study_materials, mock_test, content_delivery
@@ -81,10 +81,11 @@ app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(topics.router, prefix="/api/topics", tags=["topics"])
 app.include_router(quiz.router, prefix="/api/quiz", tags=["quiz"])
+app.include_router(questions.router, prefix="/api/questions", tags=["question-generation"])
 app.include_router(ai_quiz.router, prefix="/api/ai/quiz", tags=["AI-Generated Quizzes"])
 app.include_router(ai_content.router, prefix="/api/ai/content", tags=["AI-Generated Content"])
 app.include_router(videos.router, prefix="/api/videos", tags=["videos"])
-app.include_router(leaderboard.router, prefix="/api/leaderboard", tags=["leaderboard"])
+
 app.include_router(search.router, prefix="/api/search", tags=["search"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(db_routes.router, prefix="/api/database", tags=["database"])
@@ -123,7 +124,7 @@ async def api_info():
             "topics": "/api/topics (learning content)",
             "quiz": "/api/quiz (adaptive quizzes, AI-powered mock tests)",
             "videos": "/api/videos (YouTube integration)",
-            "leaderboard": "/api/leaderboard (rankings)",
+
             "analytics": "/api/analytics (progress tracking)",
             "search": "/api/search (content search)"
         }

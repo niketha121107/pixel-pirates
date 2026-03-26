@@ -32,6 +32,7 @@ export const Progress = () => {
     const { entries, averageUnderstanding } = useUnderstanding();
     const [loading, setLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [fetchError, setFetchError] = useState<string | null>(null);
     const [completedTopics, setCompletedTopics] = useState<{ title: string; score: number; total: number; date: string; videoWatched: boolean }[]>([]);
     const [dailyProgressData, setDailyProgressData] = useState<Array<{ day: string; xp: number }>>([]);
     const [overallStats, setOverallStats] = useState({
@@ -131,23 +132,15 @@ export const Progress = () => {
             if (statsRes.status === 'fulfilled') {
                 const s = statsRes.value.data?.data?.stats;
                 if (s) {
-                    const localAvg = localMock.length > 0
-                        ? Math.round(localMock.reduce((sum, r) => sum + Number(r.percentage || 0), 0) / localMock.length)
-                        : 0;
-                    const localTotalSeconds = localMock.length > 0
-                        ? Math.floor(localMock.reduce((sum, r) => sum + Number(r.timeTakenSec || 0), 0)) // Store total seconds
-                        : 0;
-
-                    // Convert backend hours to seconds if available, otherwise use local seconds
+                    // Use backend as single source of truth (no Math.max blending)
                     const backendSeconds = (s.totalHours ?? 0) * 3600;
-                    const totalSeconds = Math.max(backendSeconds, localTotalSeconds);
-
+                    
                     setOverallStats({
-                        totalTopics: allTopicsCount > 0 ? allTopicsCount : s.totalTopics ?? 0, // Use actual count from topics list
+                        totalTopics: allTopicsCount > 0 ? allTopicsCount : s.totalTopics ?? 0,
                         completedTopics: s.topicsCompleted ?? 0,
-                        totalQuizzes: Math.max(s.quizzesTaken ?? 0, localMock.length),
-                        avgScore: Math.max(s.avgScore ?? 0, localAvg),
-                        totalHoursLearned: totalSeconds, // Store total seconds
+                        totalQuizzes: s.quizzesTaken ?? 0,  // Backend value only
+                        avgScore: s.avgScore ?? 0,          // Backend value only
+                        totalHoursLearned: backendSeconds,   // Backend value only
                         streak: s.streak ?? 0,
                     });
                 }
@@ -183,6 +176,9 @@ export const Progress = () => {
             }
         } catch (error) {
             console.error('Error fetching progress data:', error);
+            setFetchError('Failed to load progress data. Please refresh to try again.');
+        } finally {
+            setFetchError(null);  // Clear error on successful fetch
         }
     }, [user?.id]);
 

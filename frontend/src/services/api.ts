@@ -88,15 +88,6 @@ export const videosAPI = {
     trending: (language: string) => api.get(`/videos/trending/${language}`),
 };
 
-// ── Leaderboard ──────────────────────────────────────────────────────
-export const leaderboardAPI = {
-    global: () => api.get('/leaderboard'),
-    top: (count: number) => api.get(`/leaderboard/top/${count}`),
-    userRank: () => api.get('/leaderboard/user-rank'),
-    byLanguage: (language: string) =>
-        api.get(`/leaderboard/language/${language}`),
-};
-
 // ── Search ───────────────────────────────────────────────────────
 export const searchAPI = {
     recent: () => api.get('/search/recent'),
