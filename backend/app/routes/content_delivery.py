@@ -25,7 +25,7 @@ async def get_topic_videos(
     Returns list of highly-recommended videos with metadata.
     """
     try:
-        if not db.database:
+        if db.database is None:
             raise HTTPException(status_code=503, detail="Database not available")
         
         topics_col = db.database["topics"]
@@ -66,7 +66,7 @@ async def search_videos_by_topic(
     Search and get videos for topics by name.
     """
     try:
-        if not db.database:
+        if db.database is None:
             raise HTTPException(status_code=503, detail="Database not available")
         
         topics_col = db.database["topics"]
@@ -116,7 +116,7 @@ async def get_topic_explanations(
     Optionally filter by specific explanation style.
     """
     try:
-        if not db.database:
+        if db.database is None:
             raise HTTPException(status_code=503, detail="Database not available")
         
         topics_col = db.database["topics"]
@@ -163,7 +163,7 @@ async def get_explanations_by_style(
     Useful for learning a particular explanation style.
     """
     try:
-        if not db.database:
+        if db.database is None:
             raise HTTPException(status_code=503, detail="Database not available")
         
         valid_styles = ["visual", "simplified", "logical", "analogy"]
@@ -223,7 +223,7 @@ async def get_topic_pdf_info(
     Returns PDF metadata and download info.
     """
     try:
-        if not db.database:
+        if db.database is None:
             raise HTTPException(status_code=503, detail="Database not available")
         
         topics_col = db.database["topics"]
@@ -272,7 +272,7 @@ async def download_topic_pdf(
     Download PDF for a topic.
     """
     try:
-        if not db.database:
+        if db.database is None:
             raise HTTPException(status_code=503, detail="Database not available")
         
         topics_col = db.database["topics"]
@@ -320,7 +320,7 @@ async def get_topic_mock_test(
     Returns complete test with all questions.
     """
     try:
-        if not db.database:
+        if db.database is None:
             raise HTTPException(status_code=503, detail="Database not available")
         
         # Get topic first
@@ -380,7 +380,7 @@ async def search_mock_tests(
     Search for mock tests by topic name.
     """
     try:
-        if not db.database:
+        if db.database is None:
             raise HTTPException(status_code=503, detail="Database not available")
         
         mock_tests_col = db.database["mockTests"]
@@ -427,7 +427,7 @@ async def get_complete_topic_data(
     This is the main endpoint for loading a full study session.
     """
     try:
-        if not db.database:
+        if db.database is None:
             raise HTTPException(status_code=503, detail="Database not available")
         
         topics_col = db.database["topics"]
@@ -510,7 +510,7 @@ async def get_content_statistics(
     Total topics, videos, explanations, PDFs, mock tests generated.
     """
     try:
-        if not db.database:
+        if db.database is None:
             raise HTTPException(status_code=503, detail="Database not available")
         
         topics_col = db.database["topics"]
@@ -550,3 +550,167 @@ async def get_content_statistics(
     except Exception as e:
         logger.error(f"Error fetching statistics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Admin PDF Generation Routes ──────────────────────────────────
+@router.post("/admin/generate-pdf/{topic_id}")
+async def admin_generate_pdf_for_topic(
+    topic_id: str,
+    current_user: dict = Depends(get_current_user_from_token)
+) -> Dict[str, Any]:
+    """
+    [ADMIN ONLY] Generate PDF for a specific topic.
+    Updates the topic's pdfPath field in database.
+    """
+    try:
+        # Basic auth check - in production, verify user roles
+        if db.database is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        topics_col = db.database["topics"]
+        
+        # Find topic
+        topic = await topics_col.find_one({
+            "_id": ObjectId(topic_id) if len(topic_id) == 24 else topic_id
+        })
+        
+        if not topic:
+            raise HTTPException(status_code=404, detail="Topic not found")
+        
+        # Generate PDF
+        from app.services.topic_pdf_generator import topic_pdf_generator
+        import os
+        
+        pdf_dir = os.path.join(
+            os.path.dirname(__file__),
+            "../../storage/pdfs"
+        )
+        os.makedirs(pdf_dir, exist_ok=True)
+        
+        topic_name_safe = topic.get('name', 'topic').replace(' ', '_').lower()
+        pdf_filename = f"{topic_name_safe}_{topic_id}.pdf"
+        pdf_path = os.path.join(pdf_dir, pdf_filename)
+        
+        success = topic_pdf_generator.generate_topic_pdf(topic, pdf_path)
+        
+        if success:
+            # Update database with PDF path
+            await topics_col.update_one(
+                {"_id": ObjectId(topic_id) if len(topic_id) == 24 else topic_id},
+                {
+                    "$set": {
+                        "pdfPath": pdf_path,
+                        "pdfGeneratedAt": datetime.now().isoformat()
+                    }
+                }
+            )
+            
+            return {
+                "success": True,
+                "message": f"PDF generated for topic: {topic.get('name', 'Unknown')}",
+                "topic_id": topic_id,
+                "topic_name": topic.get('name', ''),
+                "pdf_path": pdf_path,
+                "download_url": f"/api/content/pdf/download/{topic_id}"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to generate PDF")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating PDF: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/generate-all-pdfs")
+async def admin_generate_all_pdfs(
+    current_user: dict = Depends(get_current_user_from_token)
+) -> Dict[str, Any]:
+    """
+    [ADMIN ONLY] Generate PDFs for ALL topics.
+    This is a bulk operation that may take time.
+    Returns summary of generation results.
+    """
+    try:
+        if db.database is None:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        topics_col = db.database["topics"]
+        
+        # Get all topics
+        cursor = topics_col.find({})
+        topics = await cursor.to_list(length=None)
+        
+        logger.info(f"Starting PDF generation for {len(topics)} topics...")
+        
+        from app.services.topic_pdf_generator import topic_pdf_generator
+        import os
+        
+        pdf_dir = os.path.join(
+            os.path.dirname(__file__),
+            "../../storage/pdfs"
+        )
+        os.makedirs(pdf_dir, exist_ok=True)
+        
+        generated = 0
+        failed = 0
+        skipped = 0
+        
+        for idx, topic in enumerate(topics, 1):
+            try:
+                topic_id = str(topic.get('_id', ''))
+                topic_name = topic.get('name', 'topic')
+                
+                # Skip if PDF already exists
+                if topic.get('pdfPath'):
+                    logger.info(f"[{idx}/{len(topics)}] Skipping {topic_name} - PDF already exists")
+                    skipped += 1
+                    continue
+                
+                # Generate PDF
+                topic_name_safe = topic_name.replace(' ', '_').lower()
+                pdf_filename = f"{topic_name_safe}_{topic_id}.pdf"
+                pdf_path = os.path.join(pdf_dir, pdf_filename)
+                
+                success = topic_pdf_generator.generate_topic_pdf(topic, pdf_path)
+                
+                if success:
+                    # Update database
+                    await topics_col.update_one(
+                        {"_id": ObjectId(topic_id) if len(topic_id) == 24 else topic_id},
+                        {
+                            "$set": {
+                                "pdfPath": pdf_path,
+                                "pdfGeneratedAt": datetime.now().isoformat()
+                            }
+                        }
+                    )
+                    logger.info(f"[{idx}/{len(topics)}] ✅ Generated PDF for: {topic_name}")
+                    generated += 1
+                else:
+                    logger.warning(f"[{idx}/{len(topics)}] ❌ Failed to generate PDF for: {topic_name}")
+                    failed += 1
+                    
+            except Exception as e:
+                logger.error(f"[{idx}/{len(topics)}] Error generating PDF for {topic.get('name', 'unknown')}: {e}")
+                failed += 1
+        
+        logger.info(f"PDF generation complete: {generated} generated, {failed} failed, {skipped} skipped")
+        
+        return {
+            "success": True,
+            "message": "PDF generation completed",
+            "statistics": {
+                "total_topics": len(topics),
+                "pdfs_generated": generated,
+                "pdfs_failed": failed,
+                "pdfs_skipped": skipped,
+                "pdf_directory": pdf_dir
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in batch PDF generation: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+

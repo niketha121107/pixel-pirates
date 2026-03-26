@@ -48,6 +48,7 @@ function AppRoutes() {
       <Route path="/notes" element={<ProtectedRoute><Notes /></ProtectedRoute>} />
       <Route path="/videos" element={<ProtectedRoute><VideoRecommendations /></ProtectedRoute>} />
       <Route path="/mock-test" element={<ProtectedRoute><MockTest /></ProtectedRoute>} />
+      <Route path="/mock-test/:id" element={<ProtectedRoute><MockTest /></ProtectedRoute>} />
       <Route path="/mock-test-results" element={<ProtectedRoute><MockTestResults /></ProtectedRoute>} />
       <Route path="/chat" element={<ProtectedRoute><AIChat /></ProtectedRoute>} />
       <Route path="/pdf-viewer" element={<ProtectedRoute><PDFViewer /></ProtectedRoute>} />

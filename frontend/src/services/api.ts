@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-    baseURL: import.meta.env.VITE_API_URL || '/api',
+    baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api',
     headers: {
         'Content-Type': 'application/json',
     },
@@ -53,8 +53,8 @@ export const authAPI = {
 
 // ── Topics ───────────────────────────────────────────────────────────
 export const topicsAPI = {
-    getAll: (language?: string) =>
-        api.get('/topics', { params: language ? { language } : {} }),
+    getAll: (language?: string, search?: string) =>
+        api.get('/topics', { params: { ...(language ? { language } : {}), ...(search ? { search } : {}) } }),
     getById: (id: string) => api.get(`/topics/${id}`),
     getExplanation: (id: string, style?: string) =>
         api.get(`/topics/${id}/explanation`, { params: style ? { style } : {} }),
@@ -64,6 +64,8 @@ export const topicsAPI = {
         api.put(`/topics/${id}/status`, data),
     getFreshVideos: (id: string, maxResults?: number) =>
         api.get(`/topics/${id}/fresh-videos`, { params: maxResults ? { max_results: maxResults } : {} }),
+    getPDF: (id: string) =>
+        api.get(`/content/pdf/${id}`),
 };
 
 // ── Quiz ─────────────────────────────────────────────────────────────
@@ -73,7 +75,24 @@ export const quizAPI = {
         api.post('/quiz/adaptive', null, {
             params: { topic_id: topicId, question_count: questionCount || 5 },
         }),
-    mockTest: (data: object) => api.post('/quiz/mock-test', data),
+    // Generate mock test using Gemini AI with optional answer hiding
+    mockTest: (topicId?: string, topicName?: string, questionCount?: number, includeAnswers?: boolean) =>
+        api.post('/ai/quiz/test/generate', null, {
+            params: {
+                ...(topicId && { topic_id: topicId }),
+                ...(topicName && { topic_name: topicName }),
+                question_count: questionCount || 10,
+                include_answers: includeAnswers !== false,
+            },
+        }),
+    // Get mock test for a specific topic using Gemini AI
+    mockTestByTopic: (topicId: string, questionCount?: number, includeAnswers?: boolean) =>
+        api.get(`/ai/quiz/test/topic/${topicId}`, {
+            params: {
+                question_count: questionCount || 10,
+                include_answers: includeAnswers !== false,
+            },
+        }),
     results: (topicId: string) => api.get(`/quiz/results/${topicId}`),
     performanceAnalysis: () => api.get('/quiz/performance-analysis'),
 };

@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Optional
 from enum import Enum
 import json
 import httpx
-from google import genai
+import google.generativeai as genai
 from pymongo import MongoClient
 from app.core.config import settings
 
@@ -28,7 +28,13 @@ class MockTestSecurityService:
     """Handles all mock test security and generation"""
     
     def __init__(self):
-        self.genai_client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        # Configure Gemini API if key is available
+        if settings.GEMINI_API_KEY:
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            logger.info("✅ Gemini API configured")
+        else:
+            logger.warning("⚠️ Gemini API Key NOT found - will use fallback AI systems")
+        
         self.gemini_model = settings.GEMINI_MODEL
         self.openrouter_api_key = settings.OPENROUTER_API_KEY
         self.openrouter_model = settings.OPENROUTER_MODEL
@@ -202,11 +208,15 @@ Return ONLY valid JSON array with no additional text:
     
     def _call_gemini(self, prompt: str) -> str:
         """Synchronous wrapper for Gemini API call"""
-        response = self.genai_client.models.generate_content(
-            model=self.gemini_model,
-            contents=prompt,
-        )
-        return response.text
+        if not settings.GEMINI_API_KEY:
+            return None
+        try:
+            model = genai.GenerativeModel(self.gemini_model)
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            logger.error(f"Error calling Gemini API: {e}")
+            return None
     
     def _create_fallback_questions(self, topic: str, count: int) -> List[Dict[str, Any]]:
         """Create high-quality fallback questions if AI fails"""

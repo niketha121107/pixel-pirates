@@ -292,6 +292,141 @@ async def evaluate_quiz_performance(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/test/generate", response_model=SuccessResponse)
+async def generate_mock_test(
+    topic_id: Optional[str] = Query(None, description="Topic ID from database"),
+    topic_name: Optional[str] = Query(None, description="Custom topic name"),
+    question_count: int = Query(10, ge=5, le=20, description="Number of questions"),
+    difficulty: str = Query("medium", pattern="^(easy|medium|hard|mixed)$"),
+    include_answers: bool = Query(True, description="Include correct answers in response"),
+    current_user: dict = Depends(get_current_user_from_token)
+):
+    """
+    Generate comprehensive mock test using Gemini AI
+    Supports both database topics and custom topics
+    Can optionally hide correct answers for practice mode
+    """
+    try:
+        # Determine topic name
+        if topic_id:
+            from app.data import get_topic_by_id
+            topic = get_topic_by_id(topic_id)
+            if not topic:
+                raise HTTPException(status_code=404, detail="Topic not found")
+            final_topic_name = topic.get("topicName") or topic.get("name", "Programming Concept")
+        elif topic_name:
+            final_topic_name = topic_name.strip()
+        else:
+            raise HTTPException(status_code=400, detail="Either topic_id or topic_name required")
+        
+        if not final_topic_name:
+            raise HTTPException(status_code=400, detail="Topic name cannot be empty")
+        
+        logger.info(f"[MockTest] Generating {question_count} {difficulty} questions for: {final_topic_name}")
+        
+        # Generate questions using Gemini AI
+        questions = await ai_generator.generate_quiz_questions(
+            topic_name=final_topic_name,
+            num_questions=question_count,
+            difficulty=difficulty,
+            include_correct_answer=include_answers
+        )
+        
+        if not questions:
+            logger.warning(f"[MockTest] No questions generated for {final_topic_name}, using fallback")
+            questions = ai_generator._create_fallback_questions(final_topic_name, question_count, difficulty)
+        
+        # If not including answers (practice mode), hide correct answers
+        if not include_answers:
+            for q in questions:
+                q.pop("correctAnswer", None)
+                q.pop("correctIdx", None)
+        
+        logger.info(f"[MockTest] Generated {len(questions)} questions for mock test")
+        
+        return SuccessResponse(
+            success=True,
+            message=f"Mock test generated with {len(questions)} questions",
+            data={
+                "topicId": topic_id or "custom",
+                "topicName": final_topic_name,
+                "questions": questions,
+                "totalQuestions": len(questions),
+                "difficulty": difficulty,
+                "includesAnswers": include_answers,
+                "isAIGenerated": True
+            }
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[MockTest] Error generating mock test: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate mock test: {str(e)}")
+
+
+@router.get("/test/topic/{topic_id}", response_model=SuccessResponse)
+async def get_topic_mock_test(
+    topic_id: str,
+    question_count: int = Query(10, ge=1, le=20),
+    include_answers: bool = Query(True, description="Include correct answers in response"),
+    current_user: dict = Depends(get_current_user_from_token)
+):
+    """Get mock test for a specific topic using Gemini AI"""
+    try:
+        from app.data import get_topic_by_id, get_topic_by_name
+        
+        # Try to get topic by ID first, then by name as fallback
+        topic = get_topic_by_id(topic_id)
+        if not topic:
+            # Fallback: try searching by name (case-insensitive)
+            topic = get_topic_by_name(topic_id)
+        
+        if not topic:
+            raise HTTPException(status_code=404, detail=f"Topic not found: {topic_id}")
+        
+        topic_name = topic.get("topicName") or topic.get("name", "Programming Concept")
+        difficulty = topic.get("difficulty", "medium")
+        
+        logger.info(f"[TopicMockTest] Generating mock test for {topic_name}")
+        
+        # Generate questions using Gemini AI
+        questions = await ai_generator.generate_quiz_questions(
+            topic_name=topic_name,
+            num_questions=question_count,
+            difficulty=difficulty,
+            include_correct_answer=include_answers
+        )
+        
+        if not questions:
+            questions = ai_generator._create_fallback_questions(topic_name, question_count, difficulty)
+            # Hide answers if requested
+            if not include_answers:
+                for q in questions:
+                    q.pop("correctAnswer", None)
+                    q.pop("correctIdx", None)
+        
+        return SuccessResponse(
+            success=True,
+            message=f"Mock test for {topic_name} generated",
+            data={
+                "topicId": topic.get("id"),
+                "topicName": topic_name,
+                "questions": questions,
+                "totalQuestions": len(questions),
+                "difficulty": difficulty,
+                "includesAnswers": include_answers,
+                "isAIGenerated": True
+            }
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[TopicMockTest] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/test-ai", response_model=SuccessResponse)
 async def test_ai_generation(
     topic_name: str = Query("Python Functions"),

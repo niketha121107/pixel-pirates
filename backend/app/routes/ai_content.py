@@ -22,24 +22,12 @@ async def get_ai_study_material(
 ):
     """Get AI-generated study material for a topic"""
     try:
-        from app.core.database import db
-        from bson import ObjectId
+        from app.data import get_topic_by_id
         
         logger.info(f"[StudyMaterial] Fetching topic: {topic_id}")
         
-        # Query MongoDB directly for the topic
-        topic = None
-        if db.database:
-            topics_collection = db.database["topics"]
-            try:
-                # Try to find by ObjectId first
-                if len(topic_id) == 24:
-                    topic = topics_collection.find_one({"_id": ObjectId(topic_id)})
-                if not topic:
-                    topic = topics_collection.find_one({"_id": topic_id})
-            except Exception as e:
-                logger.warning(f"[StudyMaterial] ObjectId lookup failed: {e}")
-                topic = topics_collection.find_one({"_id": topic_id})
+        # Query for the topic using the data layer
+        topic = get_topic_by_id(topic_id)
         
         if not topic:
             logger.error(f"[StudyMaterial] Topic not found: {topic_id}")

@@ -422,10 +422,14 @@ export const MockTest = () => {
                             const filteredByType = mapped.filter((q: MockQuestion) => selectedTypes.includes(q.type));
                             preparedQuestions = buildBalancedQuestionSet(filteredByType, selectedTypes, questionCount);
                             
-                            if (preparedQuestions.length === questionCount) {
+                            // Accept if we got at least 3 questions, pad if needed
+                            if (preparedQuestions.length >= 3) {
+                                if (preparedQuestions.length < questionCount) {
+                                    preparedQuestions = await fillWithUniqueTopicBankQuestions(preparedQuestions, questionCount, selectedTypes);
+                                }
                                 setQuestions(preparedQuestions);
                             } else {
-                                throw new Error(`Expected ${questionCount} questions, got ${preparedQuestions.length}`);
+                                throw new Error(`AI returned insufficient questions: ${preparedQuestions.length}`);
                             }
                         } else {
                             throw new Error('AI returned no questions');
@@ -434,11 +438,12 @@ export const MockTest = () => {
                         console.warn(`⚠️ AI custom topic failed: ${aiError?.message}. Falling back to mock test...`);
                         
                         // Fallback to generic mock test
-                        const res = await quizAPI.mockTest({
-                            topics: [topicFilter],
-                            difficulty_mix: { Beginner: Math.ceil(questionCount * 0.3), Intermediate: Math.ceil(questionCount * 0.5), Advanced: Math.max(1, questionCount - Math.ceil(questionCount * 0.3) - Math.ceil(questionCount * 0.5)) },
-                            total_questions: questionCount,
-                        });
+                        const res = await quizAPI.mockTest(
+                            undefined,
+                            topicFilter,
+                            questionCount,
+                            true
+                        );
                         const apiQuestions = res.data?.data?.mockTest?.questions || res.data?.data?.questions || [];
                         if (apiQuestions.length > 0) {
                             const mapped = apiQuestions.map((q: any, i: number) => mapToMockQuestion(q, i)) as MockQuestion[];

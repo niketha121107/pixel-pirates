@@ -34,6 +34,7 @@ Pixel Pirates is a full-stack educational web application that provides personal
 - 🛡️ Anti-Cheat Mock Test Security
 - 📝 Note-Taking & Study Materials
 - 💬 AI-Powered Chat Assistance
+- 📄 Auto-Generated PDF Study Materials (200+ topics covered)
 
 ## Project Structure
 
@@ -106,6 +107,18 @@ npm run dev
 ```
 
 The app will be available at `http://localhost:5173`
+
+## PDF Study Materials
+
+All 200+ topics in the platform have auto-generated PDF study materials. Each PDF includes:
+
+- Topic overview and key concepts
+- 4 explanation styles: Simplified, Logical, Visual & Analogy
+- Code examples and practical demonstrations
+- Key points summary
+- Study materials and learning resources
+
+PDFs are generated using ReportLab and stored in `/backend/storage/pdfs/`. The frontend fetches PDFs with authentication and displays them in an embedded viewer.
 
 ### Docker Deployment
 

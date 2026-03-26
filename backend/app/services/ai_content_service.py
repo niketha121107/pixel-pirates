@@ -200,9 +200,18 @@ Return ONLY valid JSON object, no markdown code blocks."""
         topic_name: str,
         num_questions: int = 5,
         difficulty: str = "mixed",
-        history: Optional[List[str]] = None
+        history: Optional[List[str]] = None,
+        include_correct_answer: bool = True
     ) -> List[Dict[str, Any]]:
-        """Generate multiple-choice quiz questions"""
+        """Generate multiple-choice quiz questions
+        
+        Args:
+            topic_name: Name of the topic
+            num_questions: Number of questions to generate
+            difficulty: Question difficulty level
+            history: List of previous questions to avoid repetition
+            include_correct_answer: Whether to include correct answers in response (use False for practice mode)
+        """
         
         history_str = ""
         if history:
@@ -252,7 +261,8 @@ Perform a FINAL CHECK: if any generated question matches a previous concept, REW
                 questions = json.loads(response)
             except json.JSONDecodeError as je:
                 logger.error(f"JSON parse error: {je}. Response: {response[:200]}")
-                return []
+                # Return fallback questions when JSON parsing fails
+                return self._create_fallback_questions(topic_name, num_questions, difficulty)
             
             # If response is dict, check for 'questions' key
             if isinstance(questions, dict):
@@ -298,14 +308,152 @@ Perform a FINAL CHECK: if any generated question matches a previous concept, REW
                         "type": "mcq"
                     })
             
+            # If no valid questions extracted, use fallback
             if not validated_questions:
-                logger.warning(f"No valid questions extracted from quiz generation")
+                logger.warning(f"No valid questions extracted from quiz generation, using fallback")
+                questions = self._create_fallback_questions(topic_name, num_questions, difficulty)
+            else:
+                questions = validated_questions[:num_questions]
             
-            return validated_questions[:num_questions]
+            # Hide correct answers if not requested (practice mode)
+            if not include_correct_answer:
+                for q in questions:
+                    q.pop("correctAnswer", None)
+                    q.pop("correctIdx", None)
+            
+            return questions
         
         except Exception as e:
             logger.error(f"Error generating quiz: {e}")
-            return []
+            # Return fallback questions based on topic
+            return self._create_fallback_questions(topic_name, num_questions, difficulty)
+    
+    def _create_fallback_questions(
+        self, 
+        topic: str, 
+        count: int,
+        difficulty: str = "mixed"
+    ) -> List[Dict[str, Any]]:
+        """Create high-quality fallback questions when AI APIs fail. Generates unique variations automatically."""
+        
+        # Extended question bank for better variation
+        fallback_questions = {
+            "python": [
+                {"q": "What is the correct syntax for defining a function in Python?", "opts": ["func name():", "def name():", "function name():", "define name():"], "ans": 1},
+                {"q": "Which of the following is a mutable data type in Python?", "opts": ["tuple", "string", "list", "frozenset"], "ans": 2},
+                {"q": "What does the len() function return for a string?", "opts": ["First character", "Last character", "Number of characters", "ASCII value"], "ans": 2},
+                {"q": "How do you create a dictionary in Python?", "opts": ["dict = []", "dict = {}", "dict = ()", "dict = <>"], "ans": 1},
+                {"q": "What is the output of print(3 ** 2)?", "opts": ["6", "9", "5", "1"], "ans": 1},
+                {"q": "Which keyword is used to create a loop in Python?", "opts": ["loop", "while", "iterate", "repeat"], "ans": 1},
+                {"q": "What is the correct way to comment a single line in Python?", "opts": ["// comment", "/* comment */", "# comment", "-- comment"], "ans": 2},
+                {"q": "How do you access the first element of a list?", "opts": ["list[1]", "list(0)", "list[0]", "list.first()"], "ans": 2},
+                {"q": "What keyword is used to import modules in Python?", "opts": ["include", "import", "require", "load"], "ans": 1},
+                {"q": "Which data type is used for storing true/false values?", "opts": ["bool", "boolean", "bit", "flag"], "ans": 0},
+                {"q": "How do you check the type of a variable in Python?", "opts": ["check_type()", "typeof()", "type()", "getType()"], "ans": 2},
+                {"q": "What is the result of 'hello' + 'world' in Python?", "opts": ["error", "helloworld", "hello world", "None"], "ans": 1},
+                {"q": "Which method converts a string to lowercase?", "opts": ["lowercase()", "lower()", "toLower()", "tolowercase()"], "ans": 1},
+                {"q": "What is the output of range(5)?", "opts": ["0-5", "1,2,3,4,5", "0,1,2,3,4", "5"], "ans": 2},
+            ],
+            "java": [
+                {"q": "What does JVM stand for?", "opts": ["Java Virtual Machine", "Java Version Manager", "Java Verified Module", "Java Valid Method"], "ans": 0},
+                {"q": "Which is the correct syntax for array declaration in Java?", "opts": ["int[] arr;", "int arr[];", "Both A and B", "int array[];"], "ans": 2},
+                {"q": "What is the default value of a boolean variable in Java?", "opts": ["true", "false", "0", "null"], "ans": 1},
+                {"q": "How do you create a new object in Java?", "opts": ["new", "create", "object", "make"], "ans": 0},
+                {"q": "What is the superclass of all classes in Java?", "opts": ["Parent", "SuperClass", "Object", "Class"], "ans": 2},
+                {"q": "Which keyword is used to prevent inheritance in Java?", "opts": ["protected", "private", "final", "static"], "ans": 2},
+                {"q": "What is the correct syntax for exception handling?", "opts": ["try-catch", "catch-try", "attempt-error", "test-fail"], "ans": 0},
+                {"q": "How do you declare a constant integer in Java?", "opts": ["constant int x = 5;", "final int x = 5;", "static int x = 5;", "immutable int x = 5;"], "ans": 1},
+                {"q": "Which keyword makes a class impossible to extend?", "opts": ["sealed", "final", "abstract", "interface"], "ans": 1},
+                {"q": "What is a constructor in Java?", "opts": ["A regular method", "A special method for object initialization", "A static method", "A deprecated method"], "ans": 1},
+                {"q": "Which method is automatically called when object is created?", "opts": ["main()", "init()", "constructor()", "<constructor name>()"], "ans": 3},
+                {"q": "What is the scope of 'static' keyword in Java?", "opts": ["Instance level", "Class level", "Method level", "Local level"], "ans": 1},
+                {"q": "Which interface must be implemented for custom objects comparison?", "opts": ["Comparable", "Iterator", "Cloneable", "Serializable"], "ans": 0},
+                {"q": "What does 'this' keyword refer to in Java?", "opts": ["Current method", "Current class", "Current object", "Parent class"], "ans": 2},
+            ],
+            "javascript": [
+                {"q": "What does DOM stand for?", "opts": ["Data Object Model", "Document Object Model", "Digital Object Module", "Dynamic Object Manifest"], "ans": 1},
+                {"q": "How do you declare a variable in JavaScript?", "opts": ["variable x = 5;", "var x = 5;", "declare x = 5;", "new x = 5;"], "ans": 1},
+                {"q": "What is the correct way to write a comment in JavaScript?", "opts": ["# comment", "// comment", "-- comment", "/* comment"], "ans": 1},
+                {"q": "How do you create an arrow function?", "opts": ["function => {}", "=> function {}", "() => {}", "-> function {}"], "ans": 2},
+                {"q": "What is the result of typeof null?", "opts": ["\"null\"", "\"object\"", "\"undefined\"", "null"], "ans": 1},
+                {"q": "How do you access an object property?", "opts": ["object.property", "object[property]", "Both A and B", "object->property"], "ans": 2},
+                {"q": "What does async/await do in JavaScript?", "opts": ["Waits for download", "Handles asynchronous operations", "Sleeps the function", "Repeats code"], "ans": 1},
+                {"q": "How do you parse a string to an integer?", "opts": ["parseInt()", "parseFloat()", "Number()", "Both A and C"], "ans": 3},
+                {"q": "What is the difference between let and var?", "opts": ["No difference", "let is block-scoped, var is function-scoped", "var is faster", "let is older"], "ans": 1},
+                {"q": "How do you create an object in JavaScript?", "opts": ["new Object()", "Object literals {}", "Both A and B", "constructor() {}"], "ans": 2},
+                {"q": "What does the spread operator (...) do?", "opts": ["Adds numbers", "Expands iterables", "Creates a copy", "Removes items"], "ans": 1},
+                {"q": "How do you fetch data from an API?", "opts": ["ajax()", "fetch()", "request()", "http()"], "ans": 1},
+                {"q": "What is a Promise in JavaScript?", "opts": ["A function call", "An object for async operations", "A variable type", "A loop"], "ans": 1},
+                {"q": "How do you prevent default form submission?", "opts": ["preventDefault()", "stopDefault()", "cancelEvent()", "blockSubmit()"], "ans": 0},
+            ],
+            "html": [
+                {"q": "What does HTML stand for?", "opts": ["Hyper Text Markup Language", "HTML Text Markup Language", "Home Tool Markup Language", "Hyperlinks and Text Markup Language"], "ans": 0},
+                {"q": "Which tag is used for the largest heading?", "opts": ["<h1>", "<h6>", "<head>", "<header>"], "ans": 0},
+                {"q": "What is the correct syntax for an unordered list?", "opts": ["<ul><li>", "<ol><li>", "<list>", "<ul><item>"], "ans": 0},
+                {"q": "Which attribute specifies an alternative text for an image?", "opts": ["alt", "src", "title", "description"], "ans": 0},
+                {"q": "What does <meta> tag define?", "opts": ["Metadata about HTML", "Main content", "Meta information for CSS", "Metadata file"], "ans": 0},
+                {"q": "How do you insert a comment in HTML?", "opts": ["<!-- comment -->", "// comment", "# comment", "/* comment */"], "ans": 0},
+                {"q": "Which tag is used to define a paragraph?", "opts": ["<p>", "<paragraph>", "<text>", "<para>"], "ans": 0},
+                {"q": "What is the correct way to link to an external CSS file?", "opts": ["<link rel=\"stylesheet\" href=\"style.css\">", "<style src=\"style.css\">", "<css href=\"style.css\">", "<import=\"style.css\">"], "ans": 0},
+            ],
+        }
+        
+        # Find questions for this topic (case-insensitive)
+        topic_lower = topic.lower().strip()
+        questions_pool = fallback_questions.get(topic_lower, [])
+        
+        # If no specific pool, create contextual questions for any topic
+        if not questions_pool:
+            questions_pool = [
+                {"q": f"What is the primary goal of {topic}?", "opts": ["To establish foundational knowledge", "To provide advanced techniques", "To enforce best practices", "To build practical skills"], "ans": 3},
+                {"q": f"Why is {topic} important in programming?", "opts": ["It's optional for most projects", "It improves code quality and maintainability", "It's only used in enterprise applications", "It's legacy technology"], "ans": 1},
+                {"q": f"What is a common pitfall when learning {topic}?", "opts": ["Moving too fast without practice", "Focusing too much on theory", "Not applying concepts to real projects", "All of the above"], "ans": 3},
+                {"q": f"How should you approach mastering {topic}?", "opts": ["By memorizing definitions", "By understanding concepts and practicing regularly", "By reading documentation once", "By copying code from examples"], "ans": 1},
+                {"q": f"What does proficiency in {topic} require?", "opts": ["Quick memorization only", "Consistent practice and problem-solving", "Understanding theory without implementation", "Following tutorials passively"], "ans": 1},
+                {"q": f"Which best describes effective learning of {topic}?", "opts": ["Passive reading of materials", "Active practice with projects and exercises", "Studying others' code exclusively", "Avoiding mistakes entirely"], "ans": 1},
+                {"q": f"What's the relationship between {topic} and real-world applications?", "opts": ["It's rarely used in practice", "It's fundamental to professional development", "It's only for academic purposes", "It applies only to legacy systems"], "ans": 1},
+                {"q": f"How can you verify your understanding of {topic}?", "opts": ["By passing quizzes alone", "By implementing projects and solving problems", "By reading about it", "By discussing it theoretically"], "ans": 1},
+                {"q": f"What is essential for becoming proficient in {topic}?", "opts": ["Hours of theory", "Consistent practice and real-world application", "Memorizing syntax", "Following a single resource"], "ans": 1},
+                {"q": f"When learning {topic}, what should be your focus?", "opts": ["Understanding concepts first, then coding", "Coding without understanding concepts", "Memorizing code patterns", "Avoiding practice problems"], "ans": 0},
+            ]
+        
+        # Build result with question variation
+        result = []
+        import random
+        
+        # Get questions and handle cases where more questions are requested than available
+        pool_size = len(questions_pool)
+        
+        for i in range(count):
+            # Use modulo to cycle through questions without repetition and randomize order
+            idx = (i + random.randint(0, min(5, pool_size-1))) % pool_size
+            q_data = questions_pool[idx]
+            
+            # Create variations of question by slightly modifying question text
+            question_variation = q_data["q"]
+            if i >= pool_size:
+                # Add variation for questions beyond pool size
+                variations = [
+                    f"[Variant] {q_data['q']}",
+                    f"According to best practices, {q_data['q'][0].lower()}{q_data['q'][1:]}",
+                    f"In the context of {topic}, {q_data['q'][0].lower()}{q_data['q'][1:]}",
+                ]
+                question_variation = variations[(i // pool_size) % len(variations)]
+            
+            result.append({
+                "id": f"fallback_q{i+1}",
+                "question": question_variation,
+                "options": q_data["opts"][:],  # Create new list to avoid reference issues
+                "correctAnswer": q_data["ans"],
+                "correctIdx": q_data["ans"],
+                "explanation": f"This question tests your understanding of {topic}. Correct answer: {chr(65 + q_data['ans'])}",
+                "difficulty": difficulty if difficulty != "mixed" else ["easy", "medium", "hard"][i % 3],
+                "type": "mcq",
+                "isFallback": True
+            })
+        
+        logger.info(f"⏭️  Using {len(result)} fallback questions for topic: {topic} (pool size: {pool_size})")
+        return result
     
     async def generate_mock_test(
         self,

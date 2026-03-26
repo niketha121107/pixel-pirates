@@ -138,6 +138,17 @@ def get_topic_by_id(topic_id: str):
     return MOCK_TOPICS.get(topic_id)
 
 
+def get_topic_by_name(name: str):
+    """Look up a topic by name (case-insensitive) as a fallback."""
+    _ensure_cache_loaded(require_topics=True)
+    name_lower = name.lower()
+    for topic in MOCK_TOPICS.values():
+        if (topic.get("name", "").lower() == name_lower or 
+            topic.get("topicName", "").lower() == name_lower):
+            return topic
+    return None
+
+
 def get_all_topics():
     _ensure_cache_loaded(require_topics=True)
     return list(MOCK_TOPICS.values())

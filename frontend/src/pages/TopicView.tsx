@@ -142,6 +142,8 @@ export const TopicView = () => {
     const [confidence, setConfidence] = useState(40);
     const [savedUnderstanding, setSavedUnderstanding] = useState<{ value: number; label: string } | null>(null);
     const [mockTestModalOpen, setMockTestModalOpen] = useState(false);
+    const [pdfUrl, setPdfUrl] = useState<string>('');
+    const [pdfLoading, setPdfLoading] = useState(false);
     const { saveUnderstanding, getByTopic } = useUnderstanding();
     const { addNotification } = useNotifications();
     const { startTracking, stopTracking, pauseTracking, resumeTracking, elapsedTime, isPaused, getInsight, getTotalLearningHours, getTopicTime } = useLearningTimer();
@@ -184,11 +186,18 @@ export const TopicView = () => {
         if (!topicId) { setLoadingTopic(false); return; }
         setLoadingTopic(true);
         
-        // Check if timer is already running for this topic (persistent flag in localStorage)
+        // ALWAYS start timer immediately for this topic
         const timerRunningKey = `timer_running_${topicId}`;
         const isTimerAlreadyRunning = Boolean(localStorage.getItem(timerRunningKey));
         
-        console.log(`[TopicView] Loading topic: ${topicId}, isTimerAlreadyRunning: ${isTimerAlreadyRunning}, trackingStartedRef: ${trackingStartedRef.current}`);
+        // Start tracking NOW - don't wait for API
+        if (!trackingStartedRef.current || isSameTopicRef.current !== topicId) {
+            console.log(`[TopicView] Starting IMMEDIATE tracking for topic: ${topicId}`);
+            startTracking(topicId, `Topic ${topicId}`); // Use default name, will update on API response
+            trackingStartedRef.current = true;
+            isSameTopicRef.current = topicId;
+            localStorage.setItem(timerRunningKey, 'true');
+        }
         
         topicsAPI.getById(topicId)
             .then(res => {
@@ -198,25 +207,6 @@ export const TopicView = () => {
                     setTopicLanguage(topic.language || '');
                     setTopicOverview(topic.overview || '');
                     setIsCompleted(topic.status === 'completed');
-
-                    // Start learning timer on each topic load
-                    if (isTimerAlreadyRunning) {
-                        // Timer is already running (e.g., returning from PDF/study materials)
-                        // Don't reset it - just keep it running
-                        console.log(`[TopicView] Timer already running for topic ${topicId} - continuing`);
-                        if (!trackingStartedRef.current) {
-                            trackingStartedRef.current = true;
-                            isSameTopicRef.current = topicId;
-                        }
-                    } else if (!trackingStartedRef.current || isSameTopicRef.current !== topicId) {
-                        // Starting fresh tracking for this topic (no timer running yet)
-                        console.log(`[TopicView] Starting fresh tracking for topic: ${topicId}`);
-                        startTracking(topicId, topic.topicName || topicId);
-                        trackingStartedRef.current = true;
-                        isSameTopicRef.current = topicId;
-                        // Set flag to indicate timer is now running
-                        localStorage.setItem(timerRunningKey, 'true');
-                    }
                     
                     const videos = topic.recommendedVideos || [];
                     setRecommendedVideos(videos);
@@ -264,9 +254,76 @@ export const TopicView = () => {
                     if (topic.studyMaterial && Object.keys(topic.studyMaterial).length > 0) {
                         setHasStudyMaterial(true);
                     }
+                    
+                    // Fetch PDF information
+                    setPdfLoading(true);
+                    topicsAPI.getPDF(topicId)
+                        .then(res => {
+                            console.log('[PDF Fetch] Response:', res);
+                            const pdfInfo = res.data;
+                            console.log('[PDF Fetch] PDF Info:', pdfInfo);
+                            
+                            if (pdfInfo && pdfInfo.success && pdfInfo.download_url) {
+                                const fullUrl = `http://localhost:8000${pdfInfo.download_url}`;
+                                console.log('[PDF Fetch] Fetching PDF blob from:', fullUrl);
+                                
+                                // Fetch PDF as blob with authentication
+                                return fetch(fullUrl, {
+                                    headers: {
+                                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                                    }
+                                });
+                            } else {
+                                console.warn('[PDF Fetch] Invalid response or no PDF URL:', pdfInfo);
+                                throw new Error('No download URL in response');
+                            }
+                        })
+                        .then(res => {
+                            if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                            return res.blob();
+                        })
+                        .then(blob => {
+                            const blobUrl = URL.createObjectURL(blob);
+                            console.log('[PDF Fetch] Created blob URL:', blobUrl);
+                            setPdfUrl(blobUrl);
+                        })
+                        .catch(err => {
+                            console.error('[PDF Fetch] Error fetching PDF:', err?.message || err);
+                        })
+                        .finally(() => setPdfLoading(false));
                 }
             })
-            .catch(() => {})
+            .catch((error) => {
+                // If the direct ID lookup fails, try searching for the topic by name
+                console.warn(`[TopicView] Failed to load topic by ID "${topicId}":`, error?.message);
+                
+                // If topicId looks like a language name (not a MongoDB ID), try searching
+                if (topicId && !/^[a-f0-9]{24}$/.test(topicId)) {
+                    console.log(`[TopicView] Attempting to search for topic by name: "${topicId}"`);
+                    topicsAPI.getAll(undefined, topicId) // Search for topic by name
+                        .then(res => {
+                            const topics = res.data?.data?.topics || [];
+                            if (topics.length > 0) {
+                                const topic = topics[0]; // Get the first matching topic
+                                console.log(`[TopicView] Found topic by search: ${topic.topicName}`);
+                                setTopicTitle(topic.topicName || '');
+                                setTopicLanguage(topic.language || '');
+                                setTopicOverview(topic.overview || '');
+                                setIsCompleted(topic.status === 'completed');
+                            } else {
+                                console.error(`[TopicView] No topics found matching: "${topicId}"`);
+                                addNotification({title: 'Topic Not Found', message: `Topic "${topicId}" not found`, type: 'warning'});
+                            }
+                        })
+                        .catch((searchError) => {
+                            console.error(`[TopicView] Search failed:`, searchError?.message);
+                            addNotification({title: 'Load Failed', message: `Failed to load topic: ${searchError?.message || 'Unknown error'}`, type: 'warning'});
+                        });
+                } else {
+                    console.error(`[TopicView] Topic not found with ID: "${topicId}"`);
+                    addNotification({title: 'Topic Not Found', message: `Topic with ID "${topicId}" not found`, type: 'warning'});
+                }
+            })
             .finally(() => setLoadingTopic(false));
 
         // Load test result from localStorage
@@ -875,35 +932,26 @@ export const TopicView = () => {
                             <GlassCard className={`p-0 overflow-hidden ${activeTab !== 'pdf' ? 'hidden lg:block' : ''}`}>
                                 <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex items-center gap-2">
                                     <FileText className="w-4 h-4 text-brand" />
-                                    <span className="text-sm font-semibold text-gray-700 truncate">Study Material</span>
+                                    <span className="text-sm font-semibold text-gray-700 truncate">Study Material PDF</span>
                                 </div>
-                                {hasStudyMaterial ? (
-                                    <div className="w-full p-6 flex flex-col items-center justify-center gap-5" style={{ minHeight: '360px' }}>
-                                        <div className="w-24 h-28 bg-white rounded-xl border-2 border-brand/20 shadow-sm flex flex-col items-center justify-center relative">
-                                            <div className="absolute -top-2 -right-2 w-7 h-5 bg-brand rounded-md flex items-center justify-center">
-                                                <span className="text-[8px] font-bold text-white tracking-wider">VIEW</span>
-                                            </div>
-                                            <FileText className="w-10 h-10 text-brand/60" />
-                                            <div className="w-12 h-[2px] bg-gray-200 mt-1.5 rounded" />
-                                            <div className="w-10 h-[2px] bg-gray-200 mt-1 rounded" />
-                                            <div className="w-8 h-[2px] bg-gray-200 mt-1 rounded" />
-                                        </div>
-                                        <div className="text-center max-w-[280px]">
-                                            <h3 className="text-base font-bold text-gray-800 leading-snug">{topicTitle} — Study Material</h3>
-                                            <p className="text-xs text-gray-400 mt-1.5">Opens in a full-screen reading view</p>
-                                        </div>
-                                        <Link
-                                            to={`/study-material?topicId=${encodeURIComponent(topicId)}`}
-                                            className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white bg-brand hover:bg-brand/90 transition-all shadow-md hover:shadow-lg active:scale-95"
-                                        >
-                                            <Eye className="w-4 h-4" /> View Study Material
-                                        </Link>
+                                {pdfLoading ? (
+                                    <div className="w-full h-96 flex items-center justify-center bg-gray-50">
+                                        <Loader2 className="w-6 h-6 text-brand animate-spin" />
                                     </div>
+                                ) : pdfUrl ? (
+                                    <iframe
+                                        src={pdfUrl}
+                                        className="w-full"
+                                        style={{ height: '600px' }}
+                                        title={`${topicTitle} Study Material`}
+                                        allow="fullscreen"
+                                    />
                                 ) : (
-                                    <div className="w-full h-[300px] flex items-center justify-center text-gray-400">
+                                    <div className="w-full h-96 flex items-center justify-center text-gray-400">
                                         <div className="text-center">
                                             <FileText className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                                            <p className="text-sm">No study material available yet</p>
+                                            <p className="text-sm">PDF study material is being generated</p>
+                                            <p className="text-xs text-gray-400 mt-1">Check back in a moment</p>
                                         </div>
                                     </div>
                                 )}
@@ -1114,15 +1162,13 @@ export const TopicView = () => {
                                 </div>
                             </GlassCard>
                         ) : (
-                            <button
+                            <GradientButton
                                 onClick={() => setMockTestModalOpen(true)}
-                                className="w-full"
+                                className="group text-lg px-8 py-4 w-full justify-center"
                             >
-                                <GradientButton className="group text-lg px-8 py-4 w-full justify-center">
-                                    Take Topic Test
-                                    <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                                </GradientButton>
-                            </button>
+                                Take Topic Test
+                                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                            </GradientButton>
                         )}
                     </motion.div>
 

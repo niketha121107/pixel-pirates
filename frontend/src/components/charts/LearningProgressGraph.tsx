@@ -39,8 +39,8 @@ export const LearningProgressGraph = ({ data }: LearningProgressGraphProps) => {
       <GlassCard className="p-6">
         <h2 className="text-xl font-bold text-gray-800 mb-4">Learning Progress</h2>
         
-        <div className="w-full h-72">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="w-full h-72 min-h-[288px]" style={{ minWidth: '100%' }}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={280}>
             <LineChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
               <XAxis 
