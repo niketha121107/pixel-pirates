@@ -3,11 +3,7 @@ from typing import Optional, List
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-# Try several paths to be sure
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-env_path = os.path.join(project_root, ".env")
-load_dotenv(env_path)
-load_dotenv() # Also load from CWD
+load_dotenv()
 
 class Settings:
     # YouTube API Configuration
@@ -27,7 +23,7 @@ class Settings:
     # Gemini API Configuration (used for adaptive quiz + quiz evaluation)
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GEMINI_BASE_URL: str = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     
     # JWT Authentication Configuration
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "fallback-secret-key-change-this")
@@ -38,7 +34,7 @@ class Settings:
     SECRET_KEY: str = os.getenv("SECRET_KEY", "fallback-secret-key")
     
     # Application Configuration
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:5000")
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000")
     CORS_ORIGINS: List[str] = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
     
     # Database Configuration
@@ -76,10 +72,3 @@ class Settings:
         return True
 
 settings = Settings()
-
-# Debug print to verify loading (only shows first/last few chars for security)
-key = settings.GEMINI_API_KEY
-if key:
-    print(f"[OK] Gemini API Key loaded: {key[:5]}...{key[-5:]}")
-else:
-    print("[ERROR] Gemini API Key NOT found in environment")

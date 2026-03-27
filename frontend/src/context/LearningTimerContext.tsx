@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { progressAPI } from '../services/api';
-import { formatTimeHHMMSS } from '../utils/timeFormatter';
 
 interface TimingRecord {
     topicId: string;
@@ -19,19 +18,14 @@ interface MindsetInsight {
 }
 
 interface LearningTimerContextType {
-    startTracking: (topicId: string, topicName: string) => void;
+    startTracking: (topicId: string, topicName: string, resumeIfActive?: boolean) => void;
     stopTracking: () => void;
-    pauseTracking: () => void;
-    resumeTracking: () => void;
     currentTopic: string | null;
     elapsedTime: number;
-    isPaused: boolean;
     records: TimingRecord[];
     getInsight: () => MindsetInsight;
     getTopicTime: (topicId: string) => number;
     getTotalLearningHours: () => number;
-    getFormattedElapsedTime: () => string; // HH:MM:SS format
-    getFormattedTopicTime: (topicId: string) => string; // HH:MM:SS format
 }
 
 const LearningTimerContext = createContext<LearningTimerContextType | undefined>(undefined);
@@ -41,37 +35,78 @@ export function LearningTimerProvider({ children }: { children: ReactNode }) {
         const stored = localStorage.getItem('learning_timer_records');
         return stored ? JSON.parse(stored) : [];
     });
-    const [currentTopic, setCurrentTopic] = useState<string | null>(null);
-    const [currentTopicName, setCurrentTopicName] = useState<string>('');
-    const [startTime, setStartTime] = useState<number | null>(null);
+    
+    // Restore active session from localStorage on mount
+    const [currentTopic, setCurrentTopic] = useState<string | null>(() => {
+        try {
+            const session = localStorage.getItem('learning_timer_active_session');
+            return session ? JSON.parse(session).currentTopic : null;
+        } catch {
+            return null;
+        }
+    });
+    const [currentTopicName, setCurrentTopicName] = useState<string>(() => {
+        try {
+            const session = localStorage.getItem('learning_timer_active_session');
+            return session ? JSON.parse(session).currentTopicName : '';
+        } catch {
+            return '';
+        }
+    });
+    const [startTime, setStartTime] = useState<number | null>(() => {
+        try {
+            const session = localStorage.getItem('learning_timer_active_session');
+            return session ? JSON.parse(session).startTime : null;
+        } catch {
+            return null;
+        }
+    });
     const [elapsedTime, setElapsedTime] = useState(0);
-    const [isPaused, setIsPaused] = useState(false);
 
     // Use ref to always have access to current tracking values
-    const trackingRef = useRef({ currentTopic: null as string | null, currentTopicName: '', startTime: null as number | null, pausedAt: 0, isPaused: false });
+    const trackingRef = useRef({ currentTopic: null as string | null, currentTopicName: '', startTime: null as number | null });
     
     // Keep ref in sync with state
     useEffect(() => {
-        trackingRef.current = { currentTopic, currentTopicName, startTime, pausedAt: trackingRef.current.pausedAt, isPaused };
-    }, [currentTopic, currentTopicName, startTime, isPaused]);
+        trackingRef.current = { currentTopic, currentTopicName, startTime };
+    }, [currentTopic, currentTopicName, startTime]);
+    
+    // Persist active session to localStorage whenever it changes
+    useEffect(() => {
+        if (currentTopic && startTime) {
+            localStorage.setItem('learning_timer_active_session', JSON.stringify({
+                currentTopic,
+                currentTopicName,
+                startTime,
+            }));
+        } else {
+            localStorage.removeItem('learning_timer_active_session');
+        }
+    }, [currentTopic, currentTopicName, startTime]);
 
     // Persist records
     useEffect(() => {
         localStorage.setItem('learning_timer_records', JSON.stringify(records));
     }, [records]);
 
-    // Tick timer (but not when paused)
+    // Tick timer continuously (no pause logic - timer always runs during topic session)
+    // Calculate elapsed time from original startTime to ensure accuracy across remounts
     useEffect(() => {
-        if (!startTime || isPaused) return;
+        if (!startTime) return;
+        
+        // Immediately show the current elapsed time on mount
+        setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+        
+        // Then update every second
         const interval = setInterval(() => {
             setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
         }, 1000);
         return () => clearInterval(interval);
-    }, [startTime, isPaused]);
+    }, [startTime]);
 
-    // Auto-save time to database every 30 seconds
+    // Auto-save time to database every 30 seconds (continuous, no pause logic)
     useEffect(() => {
-        if (!currentTopic || isPaused || !startTime) return;
+        if (!currentTopic || !startTime) return;
         
         const autoSaveInterval = setInterval(() => {
             const totalTime = Math.round(elapsedTime);
@@ -85,10 +120,17 @@ export function LearningTimerProvider({ children }: { children: ReactNode }) {
         }, 30000); // Auto-save every 30 seconds
         
         return () => clearInterval(autoSaveInterval);
-    }, [currentTopic, elapsedTime, isPaused, startTime]);
+    }, [currentTopic, elapsedTime, startTime]);
 
-    const startTracking = useCallback((topicId: string, topicName: string) => {
-        // If already tracking, stop and save previous session first
+    const startTracking = useCallback((topicId: string, topicName: string, resumeIfActive?: boolean) => {
+        // Check if we're trying to resume the same topic
+        if (resumeIfActive && trackingRef.current.currentTopic === topicId && trackingRef.current.startTime) {
+            // Same topic is already tracking - just resume without resetting
+            console.log(`[Timer] Resuming existing tracking for topic: ${topicId}`);
+            return;
+        }
+        
+        // If already tracking a different topic, save it first
         if (trackingRef.current.currentTopic && trackingRef.current.startTime) {
             const duration = Math.floor((Date.now() - trackingRef.current.startTime) / 1000);
             setRecords(prev => [...prev, {
@@ -99,9 +141,13 @@ export function LearningTimerProvider({ children }: { children: ReactNode }) {
                 duration,
             }]);
         }
+        
+        // Start fresh tracking for this topic
+        console.log(`[Timer] Starting fresh tracking for topic: ${topicId}`);
         setCurrentTopic(topicId);
         setCurrentTopicName(topicName);
-        setStartTime(Date.now());
+        const now = Date.now();
+        setStartTime(now);
         setElapsedTime(0);
     }, []);
 
@@ -121,67 +167,7 @@ export function LearningTimerProvider({ children }: { children: ReactNode }) {
         setCurrentTopicName('');
         setStartTime(null);
         setElapsedTime(0);
-        setIsPaused(false);
     }, []);
-
-    const pauseTracking = useCallback(() => {
-        // Freeze the timer without stopping it
-        if (trackingRef.current.currentTopic && trackingRef.current.startTime && !trackingRef.current.isPaused) {
-            trackingRef.current.pausedAt = elapsedTime; // Save current elapsed time
-            // Persist pause state to localStorage so it survives navigation
-            localStorage.setItem(`timer_pause_${trackingRef.current.currentTopic}`, JSON.stringify({
-                pausedAt: elapsedTime,
-                pausedTime: Date.now(),
-            }));
-            setIsPaused(true);
-        }
-    }, [elapsedTime]);
-
-    const resumeTracking = useCallback(() => {
-        // Resume the timer from where it was paused
-        if (trackingRef.current.currentTopic && trackingRef.current.isPaused) {
-            // Get the saved pause state from localStorage
-            const savedPauseKey = `timer_pause_${trackingRef.current.currentTopic}`;
-            const savedPause = localStorage.getItem(savedPauseKey);
-            
-            let resumeFromTime = trackingRef.current.pausedAt;
-            if (savedPause) {
-                try {
-                    const pauseData = JSON.parse(savedPause);
-                    resumeFromTime = pauseData.pausedAt;
-                    console.log(`[Timer Context] Resuming from: ${resumeFromTime}s`);
-                } catch (e) {
-                    console.log(`[Timer Context] Failed to parse pause data, using pausedAt: ${trackingRef.current.pausedAt}s`);
-                }
-            }
-            
-            // Adjust start time so elapsedTime continues from where it was paused
-            const adjustedStartTime = Date.now() - resumeFromTime * 1000;
-            setStartTime(adjustedStartTime);
-            setIsPaused(false);
-            // Do NOT clear localStorage here - let TopicView clear it after successful resume
-            console.log(`[Timer Context] Timer resumed. Will continue from ${resumeFromTime}s`);
-        }
-    }, []);
-
-    // Handle tab visibility changes - pause when user switches tabs, resume when they come back
-    // This must come AFTER pauseTracking and resumeTracking are defined
-    useEffect(() => {
-        const handleVisibilityChange = () => {
-            if (document.hidden) {
-                // Tab is now hidden - pause the timer
-                pauseTracking();
-            } else {
-                // Tab is now visible - resume the timer
-                if (currentTopic && isPaused) {
-                    resumeTracking();
-                }
-            }
-        };
-
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }, [currentTopic, isPaused, pauseTracking, resumeTracking]);
 
     const getTopicTime = useCallback((topicId: string) => {
         return records
@@ -238,30 +224,16 @@ export function LearningTimerProvider({ children }: { children: ReactNode }) {
         }
     }, [records]);
 
-    const getFormattedElapsedTime = useCallback(() => {
-        return formatTimeHHMMSS(elapsedTime);
-    }, [elapsedTime]);
-
-    const getFormattedTopicTime = useCallback((topicId: string) => {
-        const totalSeconds = getTopicTime(topicId);
-        return formatTimeHHMMSS(totalSeconds);
-    }, [getTopicTime]);
-
     return (
         <LearningTimerContext.Provider value={{
             startTracking,
             stopTracking,
-            pauseTracking,
-            resumeTracking,
             currentTopic,
             elapsedTime,
-            isPaused,
             records,
             getInsight,
             getTopicTime,
             getTotalLearningHours,
-            getFormattedElapsedTime,
-            getFormattedTopicTime,
         }}>
             {children}
         </LearningTimerContext.Provider>

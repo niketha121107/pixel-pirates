@@ -144,7 +144,7 @@ export const TopicView = () => {
     const [mockTestModalOpen, setMockTestModalOpen] = useState(false);
     const { saveUnderstanding, getByTopic } = useUnderstanding();
     const { addNotification } = useNotifications();
-    const { startTracking, stopTracking, pauseTracking, resumeTracking, elapsedTime, isPaused, getInsight, getTotalLearningHours, getTopicTime } = useLearningTimer();
+    const { startTracking, stopTracking, elapsedTime, getInsight, getTotalLearningHours, getTopicTime } = useLearningTimer();
     const { preferences } = useUserPreferences();
     const location = useLocation();
     const trackingStartedRef = useRef(false);
@@ -202,16 +202,18 @@ export const TopicView = () => {
                     // Start learning timer on each topic load
                     if (isTimerAlreadyRunning) {
                         // Timer is already running (e.g., returning from PDF/study materials)
-                        // Don't reset it - just keep it running
-                        console.log(`[TopicView] Timer already running for topic ${topicId} - continuing`);
+                        // Resume the existing session (don't reset it)
+                        console.log(`[TopicView] Resuming existing timer for topic ${topicId}`);
                         if (!trackingStartedRef.current) {
                             trackingStartedRef.current = true;
                             isSameTopicRef.current = topicId;
                         }
+                        // Resume with the resumeIfActive flag to prevent resetting
+                        startTracking(topicId, topic.topicName || topicId, true);
                     } else if (!trackingStartedRef.current || isSameTopicRef.current !== topicId) {
                         // Starting fresh tracking for this topic (no timer running yet)
                         console.log(`[TopicView] Starting fresh tracking for topic: ${topicId}`);
-                        startTracking(topicId, topic.topicName || topicId);
+                        startTracking(topicId, topic.topicName || topicId, false);
                         trackingStartedRef.current = true;
                         isSameTopicRef.current = topicId;
                         // Set flag to indicate timer is now running
@@ -411,9 +413,9 @@ export const TopicView = () => {
 
     const handleComplete = () => {
         if (hasWatchedFull && topicId) {
-            // Update accumulated time
-            accumulatedTimeRef.current += elapsedTime;
-            const totalTimeSpent = Math.round(accumulatedTimeRef.current);
+            // Calculate total time: previous sessions + current session
+            // Note: elapsedTime is the current session time, recalculated from startTime
+            const totalTimeSpent = Math.round(elapsedTime);
             const formattedTime = formatTimeDetailed(totalTimeSpent);
             const formattedTimeHHMMSS = formatTimeHHMMSS(totalTimeSpent);
             
@@ -442,7 +444,7 @@ export const TopicView = () => {
             addNotification({
                 type: 'congrats',
                 title: 'Congratulations! Topic completed 🎉',
-                message: `You have successfully completed "${topicTitle}" within ${formattedTimeHHMMSS}! Keep up the awesome work.`,
+                message: `You have successfully completed "${topicTitle}" in ${formattedTimeHHMMSS}! Keep up the awesome work.`,
                 topicId: parseInt(topicId) || 0,
             });
         }
@@ -570,10 +572,10 @@ export const TopicView = () => {
                             <div className="flex items-center justify-between flex-wrap gap-3">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
-                                        <Timer className={`w-5 h-5 ${isPaused ? 'text-orange-600' : 'text-indigo-600'}`} />
+                                        <Timer className="w-5 h-5 text-indigo-600" />
                                     </div>
                                     <div>
-                                        <p className="text-xs text-gray-500 font-medium">Time on this topic {isPaused && <span className="text-orange-600 font-bold">(Paused)</span>}</p>
+                                        <p className="text-xs text-gray-500 font-medium">Time on this topic</p>
                                         <p className="text-lg font-bold text-gray-800 font-mono">{formatElapsed(elapsedTime)}</p>
                                     </div>
                                 </div>

@@ -135,6 +135,7 @@ export const progressAPI = {
         api.get('/progress/topic', { params: topicId ? { topic_id: topicId } : {} }),
     saveMockResult: (data: object) => api.post('/progress/mock-result', data),
     getMockResults: () => api.get('/progress/mock-results'),
+    getDashboardMetrics: () => api.get('/progress/dashboard-metrics'),
 };
 
 // ── Adaptive Learning ────────────────────────────────────────────

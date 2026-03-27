@@ -525,7 +525,8 @@ export const MockTest = () => {
         });
         localStorage.setItem(userKey, JSON.stringify(results.slice(0, 200)));
 
-        if (topicId && percentage >= 70) {
+        if (topicId) {
+            // Always mark topic as completed (regardless of score)
             topicsAPI.updateStatus(topicId, { status: 'completed', score: percentage }).catch(() => {});
         }
 

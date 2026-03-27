@@ -209,7 +209,7 @@ export const MockTestModal = ({
                 percentage,
                 totalPoints,
                 timeTaken,
-                status: percentage >= 70 ? 'completed' : 'in-progress'
+                status: 'completed'  // Always mark as completed
             });
             
             // Record topic progress to backend
@@ -218,7 +218,7 @@ export const MockTestModal = ({
                 quiz_score: totalScore,
                 quiz_total: totalPoints,
                 attempts: 1,
-                status: percentage >= 70 ? 'completed' : 'in-progress'
+                status: 'completed'  // Always mark as completed
             });
             console.log('✅ saveTopic succeeded:', topicRes.data);
             

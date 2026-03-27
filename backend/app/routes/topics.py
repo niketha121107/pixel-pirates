@@ -20,6 +20,7 @@ async def get_topics(
     
     # Add user progress to each topic
     quiz_scores = user.get("quizScores", {})
+    completion_dates = user.get("completionDates", {})
     topics_with_progress = []
     for topic in topics:
         topic_id = topic.get("id") or str(topic.get("_id", ""))
@@ -39,14 +40,17 @@ async def get_topics(
             topic_data["status"] = "completed"
             topic_data["score"] = quiz_scores.get(topic_id, 0)
             topic_data["total"] = 100
+            topic_data["completedAt"] = completion_dates.get(topic_id, "")  # Add completion date
         elif topic_id in user.get("inProgressTopics", []):
             topic_data["status"] = "in-progress"
             topic_data["score"] = 0
             topic_data["total"] = 100
+            topic_data["completedAt"] = ""
         else:
             topic_data["status"] = "pending"
             topic_data["score"] = 0
             topic_data["total"] = 100
+            topic_data["completedAt"] = ""
         
         # Apply filters
         if language and topic["language"].lower() != language.lower():

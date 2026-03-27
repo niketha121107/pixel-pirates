@@ -241,13 +241,20 @@ export const QuizPage = () => {
                 finalAnswers[currentQ] = selectedAnswer ?? -1;
                 const finalScore = finalAnswers.filter((a, i) => a === questions[i]?.correctIdx).length;
                 const pct = totalQuestions > 0 ? Math.round((finalScore / totalQuestions) * 100) : 0;
+                
                 progressAPI.saveTopic({
                     topic_id: topicId,
                     quiz_score: finalScore,
                     quiz_total: totalQuestions,
                     attempts: 1,
                     status: pct >= 70 ? 'completed' : 'in-progress',
+                }).then(() => {
+                    // Trigger progress page refresh after successful completion
+                    if (pct >= 70) {
+                        localStorage.setItem('quiz-completed-trigger', Date.now().toString());
+                    }
                 }).catch(() => {});
+                
                 quizAPI.submit({
                     topic_id: topicId,
                     answers: questions.map((q, i) => ({
@@ -255,6 +262,11 @@ export const QuizPage = () => {
                         selected_answer: finalAnswers[i] ?? -1,
                     })),
                     time_taken: 0,
+                }).then(() => {
+                    // Also trigger refresh on successful backend submission
+                    if (pct >= 70) {
+                        localStorage.setItem('quiz-completed-trigger', Date.now().toString());
+                    }
                 }).catch(() => {});
             }
         }

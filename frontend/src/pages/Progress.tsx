@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { usersAPI, topicsAPI } from '../services/api';
+import { usersAPI, topicsAPI, progressAPI } from '../services/api';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { Navbar } from '../components/layout/Navbar';
 import { Sidebar } from '../components/layout/Sidebar';
@@ -118,8 +118,8 @@ export const Progress = () => {
                 }
             }
 
-            const [statsRes, topicsRes] = await Promise.allSettled([
-                usersAPI.stats(),
+            const [dashboardRes, topicsRes] = await Promise.allSettled([
+                progressAPI.getDashboardMetrics(),
                 topicsAPI.getAll(),
             ]);
 
@@ -135,24 +135,55 @@ export const Progress = () => {
                 console.error('❌ Topics API failed:', topicsRes.reason);
             }
 
-            if (statsRes.status === 'fulfilled') {
-                const s = statsRes.value.data?.data?.stats;
-                if (s) {
-                    console.log('📊 Stats from API:', s);
-                    // Use backend as single source of truth (no Math.max blending)
-                    const backendSeconds = (s.totalHours ?? 0) * 3600;
+            if (dashboardRes.status === 'fulfilled') {
+                const metrics = dashboardRes.value.data?.data?.metrics;
+                const learningProgressGraph = dashboardRes.value.data?.data?.learning_progress_graph;
+                if (metrics) {
+                    console.log('📊 Dashboard metrics from API:', metrics);
+                    // Use backend as single source of truth
+                    const backendSeconds = (metrics.time_learned_seconds ?? 0);
                     
                     setOverallStats({
-                        totalTopics: allTopicsCount > 0 ? allTopicsCount : s.totalTopics ?? 0,
-                        completedTopics: s.topicsCompleted ?? 0,
-                        totalQuizzes: s.quizzesTaken ?? 0,  // Backend value only
-                        avgScore: s.avgScore ?? 0,          // Backend value only
-                        totalHoursLearned: backendSeconds,   // Backend value only
-                        streak: s.streak ?? 0,
+                        totalTopics: metrics.total_topics ?? allTopicsCount ?? 0,
+                        completedTopics: metrics.topics_done ?? 0,
+                        totalQuizzes: 0,
+                        avgScore: metrics.avg_score ?? 0,
+                        totalHoursLearned: backendSeconds,
+                        streak: 0,
                     });
                 }
-            } else if (statsRes.status === 'rejected') {
-                console.error('❌ Stats API failed:', statsRes.reason);
+                
+                // Set learning progress graph data from backend using engagement mapping
+                if (learningProgressGraph && Array.isArray(learningProgressGraph)) {
+                    console.log('📈 Learning progress graph from backend:', learningProgressGraph);
+                    const graphData = learningProgressGraph.map((item: any) => ({
+                        day: item.day,
+                        xp: item.engagement, // Using engagement value (0-1 scale) as data
+                    }));
+                    setDailyProgressData(graphData);
+                }
+            } else if (dashboardRes.status === 'rejected') {
+                console.error('❌ Dashboard metrics API failed:', dashboardRes.reason);
+                // Fallback to stats API if dashboard metrics fails
+                try {
+                    const statsRes = await usersAPI.stats();
+                    const s = statsRes.data?.data?.stats;
+                    if (s) {
+                        console.log('📊 Stats from fallback API:', s);
+                        const backendSeconds = (s.totalHours ?? 0) * 3600;
+                        
+                        setOverallStats({
+                            totalTopics: allTopicsCount > 0 ? allTopicsCount : s.totalTopics ?? 0,
+                            completedTopics: s.topicsCompleted ?? 0,
+                            totalQuizzes: s.quizzesTaken ?? 0,
+                            avgScore: s.avgScore ?? 0,
+                            totalHoursLearned: backendSeconds,
+                            streak: s.streak ?? 0,
+                        });
+                    }
+                } catch (fallbackErr) {
+                    console.error('❌ Fallback stats API also failed:', fallbackErr);
+                }
             }
 
             if (topicsRes.status === 'fulfilled') {
@@ -176,10 +207,15 @@ export const Progress = () => {
                         videoWatched: true,
                     }));
 
-                // Calculate and set daily progress data based on actual user performance
+                // Use completed topics from API (merged with local mock results as fallback)
                 const allCompleted = topics.length > 0 ? topics : localCompleted;
-                const dailyData = calculateDailyProgress(allCompleted, localMock);
-                setDailyProgressData(dailyData);
+                
+                // Only calculate local daily progress if backend data wasn't already set
+                // The backend learning_progress_graph uses score-to-engagement mapping
+                if (!dailyProgressData || dailyProgressData.length === 0) {
+                    const dailyData = calculateDailyProgress(allCompleted, localMock);
+                    setDailyProgressData(dailyData);
+                }
                 
                 setCompletedTopics(allCompleted);
             }
@@ -203,11 +239,15 @@ export const Progress = () => {
 
     // Smart auto-refresh: Listen for changes and smart polling
     useEffect(() => {
-        // Listen for storage changes (when mock test results are saved)
+        // Listen for storage changes (when mock test results are saved or quiz is completed)
         const handleStorageChange = (e: StorageEvent) => {
-            if (e.key?.includes('edutwin-mock-results') || e.key?.includes('edutwin-understanding')) {
-                // Immediate refresh when user takes a test
+            if (e.key?.includes('edutwin-mock-results') || e.key?.includes('edutwin-understanding') || e.key === 'quiz-completed-trigger') {
+                // Immediate refresh when user takes a test or completes a quiz
                 fetchAllData();
+                // Clear the trigger
+                if (e.key === 'quiz-completed-trigger') {
+                    localStorage.removeItem('quiz-completed-trigger');
+                }
             }
         };
 
